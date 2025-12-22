@@ -1,17 +1,46 @@
 {
     "name": "ComplyFlow",
     "short_name": "ComplyFlow",
+    "id": "/complyflow",
     "description": "AI-Powered Healthcare Compliance & Sponsor Guardian",
     "start_url": "/",
     "display": "standalone",
+    "orientation": "any",
     "background_color": "#0f172a",
     "theme_color": "#0f172a",
+    "categories": [
+        "business",
+        "medical",
+        "productivity"
+    ],
     "icons": [
+        {
+            "src": "/icon.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
         {
             "src": "/icon.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any maskable"
+        }
+    ],
+    "screenshots": [
+        {
+            "src": "/screenshot1.png",
+            "sizes": "1080x1920",
+            "type": "image/png",
+            "form_factor": "narrow",
+            "label": "ComplyFlow Dashboard"
+        },
+        {
+            "src": "/screenshot2.png",
+            "sizes": "1920x1080",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "AI Gap Analyzer"
         }
     ]
 }
