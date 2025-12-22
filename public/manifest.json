@@ -16,29 +16,29 @@
     "icons": [
         {
             "src": "/icon.png",
-            "sizes": "192x192",
-            "type": "image/png",
-            "purpose": "any"
+            "sizes": "1024x1024",
+            "type": "image/jpeg",
+            "purpose": "any maskable"
         },
         {
             "src": "/icon.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "any maskable"
+            "sizes": "192x192",
+            "type": "image/jpeg",
+            "purpose": "any"
         }
     ],
     "screenshots": [
         {
             "src": "/screenshot1.png",
-            "sizes": "1080x1920",
-            "type": "image/png",
+            "sizes": "1024x1024",
+            "type": "image/jpeg",
             "form_factor": "narrow",
             "label": "ComplyFlow Dashboard"
         },
         {
             "src": "/screenshot2.png",
-            "sizes": "1920x1080",
-            "type": "image/png",
+            "sizes": "1024x1024",
+            "type": "image/jpeg",
             "form_factor": "wide",
             "label": "AI Gap Analyzer"
         }
