@@ -1,7 +1,7 @@
 {
     "name": "ComplyFlow",
     "short_name": "ComplyFlow",
-    "id": "complyflow-pwa-v1",
+    "id": "complyflow-pwa-v2",
     "description": "AI-Powered Healthcare Compliance & Sponsor Guardian",
     "lang": "en-GB",
     "dir": "ltr",
@@ -18,13 +18,13 @@
     ],
     "icons": [
         {
-            "src": "/icon.png",
+            "src": "/icon.jpeg",
             "sizes": "1024x1024",
             "type": "image/jpeg",
             "purpose": "any"
         },
         {
-            "src": "/icon.png",
+            "src": "/icon.jpeg",
             "sizes": "512x512",
             "type": "image/jpeg",
             "purpose": "maskable"
@@ -32,14 +32,14 @@
     ],
     "screenshots": [
         {
-            "src": "/screenshot1.png",
+            "src": "/screenshot1.jpeg",
             "sizes": "1024x1024",
             "type": "image/jpeg",
             "form_factor": "narrow",
             "label": "ComplyFlow Dashboard"
         },
         {
-            "src": "/screenshot2.png",
+            "src": "/screenshot2.jpeg",
             "sizes": "1024x1024",
             "type": "image/jpeg",
             "form_factor": "wide",
@@ -52,7 +52,7 @@
             "url": "/",
             "icons": [
                 {
-                    "src": "/icon.png",
+                    "src": "/icon.jpeg",
                     "sizes": "192x192"
                 }
             ]
@@ -62,7 +62,7 @@
             "url": "/gap-analyzer",
             "icons": [
                 {
-                    "src": "/icon.png",
+                    "src": "/icon.jpeg",
                     "sizes": "192x192"
                 }
             ]

@@ -1,11 +1,11 @@
-const CACHE_NAME = 'complyflow-v1.1';
+const CACHE_NAME = 'complyflow-v1.2';
 const ASSETS = [
     '/',
     '/index.html',
     '/manifest.json',
-    '/icon.png',
-    '/screenshot1.png',
-    '/screenshot2.png'
+    '/icon.jpeg',
+    '/screenshot1.jpeg',
+    '/screenshot2.jpeg'
 ];
 
 self.addEventListener('install', (event) => {
