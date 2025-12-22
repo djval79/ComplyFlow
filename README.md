@@ -1,73 +1,57 @@
-# React + TypeScript + Vite
+# ComplyFlow - AI-Powered Healthcare Compliance
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+ComplyFlow is a high-performance regulatory management platform designed for the UK healthcare sector. It combines AI-driven policy analysis with automated tracking for CQC regulations and Home Office sponsorship compliance.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **CQC Gap Analyzer**: Upload documents and use Google Gemini AI to identify compliance gaps.
+- **Sponsor Guardian**: Track international worker visas, CoS usage, and right-to-work checks.
+- **Inspection Simulator**: Mock inspection tool to prepare staff for regulatory visits.
+- **Governance Dashboard**: Centralized oversight for multi-site care organizations.
+- **Training Modules**: Integrated training for Home Office e-Visa changes.
 
-## React Compiler
+## 🛠️ Technology Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend**: React 18, Vite, TypeScript, Lucide Icons.
+- **Backend**: Supabase (Auth, Database, Edge Functions).
+- **AI**: Google Gemini Pro (Reasoning Engine).
+- **Payments**: Stripe (Subscription Management).
 
-## Expanding the ESLint configuration
+## 📋 Setup Instructions
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 1. Environment Variables
+Create a `.env` file in the root directory (refer to `.env.example`):
+```bash
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_GEMINI_API_KEY=your_gemini_key
+VITE_STRIPE_PUBLIC_KEY=your_stripe_pk
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2. Database Setup
+Run the migrations found in `supabase/migrations` in your Supabase SQL Editor.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### 3. Stripe Integration (Edge Functions)
+You must deploy the following functions to Supabase:
+```bash
+# Set your secrets first
+supabase secrets set STRIPE_SECRET_KEY=rk_live_...
+supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Deploy functions
+supabase functions deploy create-checkout-session
+supabase functions deploy stripe-webhook
 ```
+
+### 4. Local Development
+```bash
+npm install
+npm run dev
+```
+
+## 🏗️ Production Deployment
+Deploy the frontend to **Vercel** or **Netlify**. Ensure all `VITE_` environment variables are added to your hosting provider's dashboard.
+
+---
+
+Built by NovumFlow. Protect your care, protect your license.

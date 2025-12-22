@@ -1,10 +1,50 @@
 import React from 'react';
-import { Check, Star, Shield, Zap, Briefcase } from 'lucide-react';
+import { Check, Star, Shield, Zap, Briefcase, Loader2 } from 'lucide-react';
 import { SUBSCRIPTION_TIERS } from '../lib/subscriptionData';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { useCompliance } from '../context/ComplianceContext';
+import { supabase } from '../lib/supabase';
 
 export const Pricing = () => {
     const navigate = useNavigate();
+    const { user, profile } = useAuth();
+    const { companyName, currentLocationId } = useCompliance();
+    const [loadingTier, setLoadingTier] = React.useState<string | null>(null);
+
+    const handleSubscribe = async (tier: any) => {
+        if (!user) {
+            navigate('/login');
+            return;
+        }
+
+        if (tier.id === 'tier_trial') {
+            navigate('/dashboard');
+            return;
+        }
+
+        setLoadingTier(tier.id);
+        try {
+            const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+                body: {
+                    tierId: tier.id,
+                    organizationId: profile?.organization_id,
+                    organizationName: companyName,
+                    userEmail: user.email
+                }
+            });
+
+            if (error) throw error;
+            if (data?.url) {
+                window.location.href = data.url;
+            }
+        } catch (err: any) {
+            console.error('Checkout error:', err);
+            alert('Failed to start checkout. Please try again.');
+        } finally {
+            setLoadingTier(null);
+        }
+    };
 
     return (
         <div className="container animate-enter" style={{ padding: '4rem 1rem', maxWidth: '1200px' }}>
@@ -78,15 +118,14 @@ export const Pricing = () => {
                         <button
                             className={`btn ${tier.recommended ? 'btn-primary' : 'btn-secondary'}`}
                             style={{ width: '100%', justifyContent: 'center' }}
-                            onClick={() => {
-                                if (tier.id === 'tier_pro') {
-                                    alert("Billing Integration Coming Soon: This would redirect to Stripe Checkout.");
-                                } else {
-                                    alert("Plan selected.");
-                                }
-                            }}
+                            onClick={() => handleSubscribe(tier)}
+                            disabled={!!loadingTier}
                         >
-                            {tier.cta}
+                            {loadingTier === tier.id ? (
+                                <Loader2 size={18} className="animate-spin" />
+                            ) : (
+                                tier.cta
+                            )}
                         </button>
                     </div>
                 ))}
