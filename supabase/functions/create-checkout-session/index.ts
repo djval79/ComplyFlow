@@ -24,9 +24,9 @@ serve(async (req) => {
         // Map internal tier IDs to your specific Stripe Price IDs
         // You would need to create these in your Stripe Dashboard
         const priceMap: Record<string, string> = {
-            "tier_starter": "price_1Rf1lMDNJV8utFweP4...", // Replace with real Price IDs later
-            "tier_pro": "price_1Rf1mMDNJV8utFweX9...",
-            "tier_enterprise": "price_1Rf1nMDNJV8utFweZ2..."
+            "tier_starter": "price_1Sgy5ADNJV8utFweXurMAsdp", // Using Pro ID for Starter as well or add specific one
+            "tier_pro": "price_1Sgy5ADNJV8utFweXurMAsdp",     // Professional Plan
+            "tier_enterprise": "price_1Sgy5ADNJV8utFweXurMAsdp" // Placeholder for Corporate
         }
 
         const priceId = priceMap[tierId]
