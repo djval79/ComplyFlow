@@ -12,7 +12,10 @@ const corsHeaders = {
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-serve(async (req) => {
+// Note: Deno and https imports are standard for Supabase Edge Functions. 
+// IDE errors regarding 'Deno' or modules are environment-related and can be ignored.
+
+serve(async (req: Request) => {
     // Handle CORS preflight
     if (req.method === "OPTIONS") {
         return new Response("ok", { headers: corsHeaders })
@@ -57,7 +60,7 @@ serve(async (req) => {
             status: 200,
         })
 
-    } catch (err) {
+    } catch (err: any) {
         return new Response(JSON.stringify({ error: err.message }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 400,

@@ -8,39 +8,69 @@ import { supabase } from '../lib/supabase';
 
 export const Pricing = () => {
     const navigate = useNavigate();
-    const { user, profile } = useAuth();
-    const { companyName, currentLocationId } = useCompliance();
+    const { user, profile, isDemo } = useAuth();
+    const { companyName } = useCompliance();
     const [loadingTier, setLoadingTier] = React.useState<string | null>(null);
 
     const handleSubscribe = async (tier: any) => {
+        // Prevent subscription in Demo Mode
+        if (isDemo) {
+            alert('Subscription features are disabled in Demo Mode. Please sign up for a real account to upgrade.');
+            return;
+        }
+
         if (!user) {
+            console.warn('[Pricing] No user session found, redirecting to login');
             navigate('/login');
             return;
         }
 
-        if (tier.id === 'tier_trial') {
+        if (tier.id === 'tier_free' || tier.id === 'tier_trial') {
             navigate('/dashboard');
             return;
         }
 
+        // Enterprise/Corporate usually requires manual setup or a different flow
+        if (tier.id === 'tier_enterprise') {
+            window.location.href = 'mailto:sales@novumsolvo.co.uk?subject=Corporate Plan Inquiry';
+            return;
+        }
+
+        const orgId = profile?.organization_id;
+        if (!orgId) {
+            console.error('[Pricing] Missing organization_id for user:', user.email);
+            alert('Your account is not properly linked to an organization. Please contact support.');
+            return;
+        }
+
         setLoadingTier(tier.id);
+        console.log(`[Pricing] Starting checkout session for tier: ${tier.id}, org: ${orgId}`);
+
         try {
             const { data, error } = await supabase.functions.invoke('create-checkout-session', {
                 body: {
                     tierId: tier.id,
-                    organizationId: profile?.organization_id,
-                    organizationName: companyName,
+                    organizationId: orgId,
+                    organizationName: companyName || 'My Organization',
                     userEmail: user.email
                 }
             });
 
-            if (error) throw error;
+            if (error) {
+                console.error('[Pricing] Edge Function error:', error);
+                throw error;
+            }
+
             if (data?.url) {
+                console.log('[Pricing] Redirecting to Stripe:', data.url);
                 window.location.href = data.url;
+            } else {
+                console.error('[Pricing] No checkout URL returned from function', data);
+                throw new Error('No checkout URL returned');
             }
         } catch (err: any) {
-            console.error('Checkout error:', err);
-            alert('Failed to start checkout. Please try again.');
+            console.error('[Pricing] Subscription flow failed:', err);
+            alert(`Failed to start checkout: ${err.message || 'Unknown error'}`);
         } finally {
             setLoadingTier(null);
         }

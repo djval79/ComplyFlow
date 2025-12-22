@@ -136,11 +136,6 @@ p {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.card:hover {
-  /* Slight lift for interactivity */
-  /* box-shadow: var(--shadow-md); // Optional: if we want hover effects on all cards */
-}
-
 /* Buttons */
 .btn {
   display: inline-flex;
