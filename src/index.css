@@ -78,7 +78,21 @@ body {
   color: var(--color-text-main);
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
+  /* PWA Enhancements */
+  padding-bottom: env(safe-area-inset-bottom);
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  /* Custom selection is better for a native feel */
 }
+
+/* Allow text selection only in inputs and specific areas */
+input,
+textarea,
+[contenteditable="true"],
+.selectable {
+  user-select: text;
+}
+
 
 a {
   text-decoration: none;
