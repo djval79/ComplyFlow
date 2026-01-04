@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { ShieldCheck, User, Clock, AlertTriangle, CheckCircle, Search, Calendar } from 'lucide-react';
+import { ShieldCheck, User, Clock, AlertTriangle, CheckCircle, Search, Calendar, X } from 'lucide-react';
 
 export const SponsorGuardian = () => {
     const [filter, setFilter] = useState('all');
     const [showCosModal, setShowCosModal] = useState(false);
+    const [showResolveModal, setShowResolveModal] = useState(false);
+    const [selectedWorker, setSelectedWorker] = useState<any>(null);
 
     const workers = [
         { id: 'W001', name: 'Sarah Jenkins', visa: 'Health & Care (SWV)', expiry: '2027-03-15', status: 'compliant', lastCheck: '2024-03-15' },
@@ -114,7 +116,13 @@ export const SponsorGuardian = () => {
                         <div>
                             <h3 style={{ fontSize: '1rem', color: '#991b1b' }}>1 Unreported Change</h3>
                             <p style={{ fontSize: '0.875rem', color: '#b91c1c' }}>Worker W005 (Amara Okeke) changed address 8 days ago. Report by Friday.</p>
-                            <button className="mt-2 text-sm font-medium" style={{ color: '#dc2626', textDecoration: 'underline', background: 'none', border: 'none', padding: 0 }}>Resolve now</button>
+                            <button
+                                className="mt-2 text-sm font-medium"
+                                style={{ color: '#dc2626', textDecoration: 'underline', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                                onClick={() => setShowResolveModal(true)}
+                            >
+                                Resolve now
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -164,7 +172,13 @@ export const SponsorGuardian = () => {
                                         </div>
                                     </td>
                                     <td style={{ padding: '1rem' }}>
-                                        <button className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}>View File</button>
+                                        <button
+                                            className="btn btn-secondary"
+                                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
+                                            onClick={() => setSelectedWorker(w)}
+                                        >
+                                            View File
+                                        </button>
                                     </td>
                                 </tr>
                             ))}
@@ -172,6 +186,81 @@ export const SponsorGuardian = () => {
                     </table>
                 </div>
             </div>
+
+            {/* Resolve Issue Modal */}
+            {showResolveModal && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.5)', zIndex: 999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div className="card animate-enter" style={{ width: '450px', padding: '2rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Report Address Change</h2>
+                            <button onClick={() => setShowResolveModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                        </div>
+                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
+                            Submit the address change notification to the Home Office via the SMS portal.
+                        </p>
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Worker: Amara Okeke (W005)</label>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">New Address</label>
+                                <textarea className="form-input w-full" rows={3} placeholder="Enter the new address..." />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Change Date</label>
+                                <input type="date" className="form-input w-full" />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button className="btn btn-secondary" onClick={() => setShowResolveModal(false)}>Cancel</button>
+                            <button className="btn btn-primary" onClick={() => { alert('Change reported to Home Office via SMS'); setShowResolveModal(false); }}>Submit Report</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Worker File Modal */}
+            {selectedWorker && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    background: 'rgba(0,0,0,0.5)', zIndex: 999,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                    <div className="card animate-enter" style={{ width: '500px', padding: '2rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>{selectedWorker.name} - Worker File</h2>
+                            <button onClick={() => setSelectedWorker(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                        </div>
+                        <div className="space-y-4">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
+                                <span>Worker ID:</span><strong>{selectedWorker.id}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
+                                <span>Visa Type:</span><strong>{selectedWorker.visa}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
+                                <span>Expiry Date:</span><strong>{selectedWorker.expiry}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
+                                <span>Last RTW Check:</span><strong>{selectedWorker.lastCheck}</strong>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
+                                <span>Status:</span><strong style={{ color: selectedWorker.status === 'compliant' ? 'var(--color-success)' : 'var(--color-warning)' }}>{selectedWorker.status.charAt(0).toUpperCase() + selectedWorker.status.slice(1)}</strong>
+                            </div>
+                            {selectedWorker.note && (
+                                <div style={{ padding: '0.75rem', background: '#fef3c7', borderRadius: 'var(--radius-sm)', color: '#92400e' }}>
+                                    <strong>Note:</strong> {selectedWorker.note}
+                                </div>
+                            )}
+                        </div>
+                        <button className="btn btn-primary w-full mt-6" onClick={() => setSelectedWorker(null)}>Close</button>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

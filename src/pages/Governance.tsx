@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart3, AlertTriangle, CheckCircle, Clock, Download, ChevronRight, Activity, Shield, ClipboardList, TrendingUp } from 'lucide-react';
 import { useCompliance } from '../context/ComplianceContext';
 import { useAuth } from '../context/AuthContext';
 
 export const GovernanceDashboard = () => {
-    const { companyName, getCurrentLocation } = useCompliance(); // Removed 'locations' from here as we use the helper
+    const navigate = useNavigate();
+    const { companyName, getCurrentLocation } = useCompliance();
     const { profile } = useAuth();
+    const [showAuditSchedule, setShowAuditSchedule] = useState(false);
+    const [showRiskRegister, setShowRiskRegister] = useState(false);
 
     // Get currently selected location from Global Context
     const currentLocation = getCurrentLocation();
@@ -103,10 +107,26 @@ export const GovernanceDashboard = () => {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button className="btn btn-primary">
+                    <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                            // Generate and download a board report PDF
+                            const reportContent = `Board Compliance Report\n\nProvider: ${providerName}\nGenerated: ${new Date().toLocaleDateString()}\n\nCQC Ratings:\n${displayDomains.map((d: any) => `${d.name}: ${d.score}`).join('\n')}\n\nRisk Register:\n${risks.map(r => `${r.title} - ${r.level}`).join('\n')}`;
+                            const blob = new Blob([reportContent], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `board-report-${new Date().toISOString().split('T')[0]}.txt`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                        }}
+                    >
                         <Download size={16} style={{ marginRight: '0.5rem' }} /> Export Board Report
                     </button>
-                    <button className="btn btn-secondary">
+                    <button
+                        className="btn btn-secondary"
+                        onClick={() => setShowAuditSchedule(true)}
+                    >
                         <Activity size={16} style={{ marginRight: '0.5rem' }} /> Audit Schedule
                     </button>
                 </div>
@@ -156,7 +176,12 @@ export const GovernanceDashboard = () => {
                             </div>
                         ))}
                     </div>
-                    <button className="btn btn-secondary w-full mt-4 text-sm">View Full Schedule</button>
+                    <button
+                        className="btn btn-secondary w-full mt-4 text-sm"
+                        onClick={() => setShowAuditSchedule(true)}
+                    >
+                        View Full Schedule
+                    </button>
                 </div>
 
                 {/* Risk Register */}
@@ -181,7 +206,12 @@ export const GovernanceDashboard = () => {
                             </div>
                         ))}
                     </div>
-                    <button className="btn btn-secondary w-full mt-4 text-sm">Update Register</button>
+                    <button
+                        className="btn btn-secondary w-full mt-4 text-sm"
+                        onClick={() => setShowRiskRegister(true)}
+                    >
+                        Update Register
+                    </button>
                 </div>
 
             </div>
@@ -211,6 +241,98 @@ export const GovernanceDashboard = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Audit Schedule Modal */}
+            {showAuditSchedule && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                }}>
+                    <div style={{
+                        background: 'white', borderRadius: 'var(--radius-lg)',
+                        padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Full Audit Schedule</h2>
+                            <button onClick={() => setShowAuditSchedule(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
+                        </div>
+                        <div className="space-y-3">
+                            {[
+                                { title: 'Infection Control', date: 'Jan 15, 2025', status: 'Overdue', color: '#dc2626' },
+                                { title: 'Care Plans Audit', date: 'Jan 20, 2025', status: 'In Progress', color: '#f59e0b' },
+                                { title: 'Health & Safety', date: 'Jan 27, 2025', status: 'Scheduled', color: '#6b7280' },
+                                { title: 'Medication Audit', date: 'Feb 5, 2025', status: 'Scheduled', color: '#6b7280' },
+                                { title: 'Staff Training Review', date: 'Feb 15, 2025', status: 'Scheduled', color: '#6b7280' },
+                                { title: 'Fire Safety Drill', date: 'Feb 28, 2025', status: 'Scheduled', color: '#6b7280' },
+                            ].map((audit, i) => (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                                    <div>
+                                        <div style={{ fontWeight: 600 }}>{audit.title}</div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>{audit.date}</div>
+                                    </div>
+                                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: audit.color }}>{audit.status}</span>
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            className="btn btn-primary w-full mt-6"
+                            onClick={() => setShowAuditSchedule(false)}
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Risk Register Modal */}
+            {showRiskRegister && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                }}>
+                    <div style={{
+                        background: 'white', borderRadius: 'var(--radius-lg)',
+                        padding: '2rem', maxWidth: '700px', width: '90%', maxHeight: '80vh', overflow: 'auto'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                            <h2 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Risk Register Management</h2>
+                            <button onClick={() => setShowRiskRegister(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer' }}>×</button>
+                        </div>
+                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
+                            Manage and track organizational risks. Update risk status, add mitigation strategies, and monitor progress.
+                        </p>
+                        <div className="space-y-3">
+                            {risks.map((risk) => (
+                                <div key={risk.id} style={{ padding: '1rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', borderLeft: `4px solid ${getRiskColor(risk.level)}` }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                        <div>
+                                            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{risk.title}</div>
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Mitigation: {risk.mitigation}</div>
+                                        </div>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-sm)', background: getRiskColor(risk.level), color: 'white' }}>
+                                            {risk.level}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                            <button
+                                className="btn btn-secondary flex-1"
+                                onClick={() => alert('Add New Risk feature coming soon')}
+                            >
+                                + Add New Risk
+                            </button>
+                            <button
+                                className="btn btn-primary flex-1"
+                                onClick={() => setShowRiskRegister(false)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </div>
     );
