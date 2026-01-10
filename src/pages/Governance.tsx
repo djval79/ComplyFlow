@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, AlertTriangle, CheckCircle, Clock, Download, ChevronRight, Activity, Shield, ClipboardList, TrendingUp } from 'lucide-react';
+import { BarChart3, AlertTriangle, CheckCircle, Clock, Download, ChevronRight, Activity, Shield, ClipboardList, TrendingUp, Award } from 'lucide-react';
 import { useCompliance } from '../context/ComplianceContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,6 +17,8 @@ export const GovernanceDashboard = () => {
 
     // State for CQC Data (Real)
     const [cqcData, setCqcData] = useState<any>(null);
+    const [analyses, setAnalyses] = useState<any[]>([]);
+    const [training, setTraining] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
 
     // Hardcoded ID for MVP demonstration
@@ -24,28 +26,45 @@ export const GovernanceDashboard = () => {
 
     useEffect(() => {
         const fetchRealData = async () => {
-            // Only fetch real data for HQ to simulate different sources
-            if (!isHQ) {
-                setCqcData(null); // Reset for branches (simulating different data source)
-                return;
-            }
-
+            if (!profile?.organization_id) return;
             setLoading(true);
             try {
                 const { supabase } = await import('../lib/supabase');
-                const { data, error } = await supabase.functions.invoke('source-layer', {
-                    body: { action: 'get-live-ratings', payload: { providerId: 'RXL' } }
-                });
-                if (error) throw error;
-                if (data) setCqcData(data);
+
+                // 1. Fetch CQC Live Ratings (HQ only)
+                if (isHQ) {
+                    const { data, error } = await supabase.functions.invoke('source-layer', {
+                        body: { action: 'get-live-ratings', payload: { providerId: 'RXL' } }
+                    });
+                    if (!error && data) setCqcData(data);
+                }
+
+                // 2. Fetch AI Analyses History
+                const { data: aData, error: aErr } = await supabase
+                    .from('compliance_analyses')
+                    .select('id, overall_score, summary, created_at, results')
+                    .eq('organization_id', profile.organization_id)
+                    .order('created_at', { ascending: false });
+
+                if (!aErr && aData) setAnalyses(aData);
+
+                // 3. Fetch Training Completions
+                const { data: tData, error: tErr } = await supabase
+                    .from('training_completions')
+                    .select('id, module_name, score, completed_at, profiles(full_name)')
+                    .eq('organization_id', profile.organization_id)
+                    .order('completed_at', { ascending: false });
+
+                if (!tErr && tData) setTraining(tData);
+
             } catch (err) {
-                console.error("Failed to load live CQC data", err);
+                console.error("Failed to load governance data", err);
             } finally {
                 setLoading(false);
             }
         };
         fetchRealData();
-    }, [isHQ]); // Re-run when location changes
+    }, [isHQ, profile?.organization_id]);
 
     // Branch Data Simulation (Mock)
     const branchDomains = [
@@ -156,6 +175,48 @@ export const GovernanceDashboard = () => {
                     ))}
                 </div>
             </div>
+
+            {/* AI Analysis History Section */}
+            <div className="card" style={{ marginBottom: '2rem' }}>
+                <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <TrendingUp size={20} color="var(--color-accent)" />
+                    AI-Driven Gap Analysis History
+                </h3>
+                <div style={{ overflowX: 'auto' }}>
+                    {analyses.length === 0 ? (
+                        <p style={{ color: 'var(--color-text-tertiary)', textAlign: 'center', padding: '2rem' }}>No AI analyses found. Run a Gap Analysis to see data here.</p>
+                    ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead style={{ background: '#f8fafc', fontSize: '0.8rem', color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>
+                                <tr>
+                                    <th style={{ textAlign: 'left', padding: '0.75rem' }}>Date</th>
+                                    <th style={{ textAlign: 'left', padding: '0.75rem' }}>Score</th>
+                                    <th style={{ textAlign: 'left', padding: '0.75rem' }}>Summary</th>
+                                    <th style={{ textAlign: 'right', padding: '0.75rem' }}>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {analyses.map(a => (
+                                    <tr key={a.id} style={{ borderBottom: '1px solid var(--color-border)', fontSize: '0.9rem' }}>
+                                        <td style={{ padding: '0.75rem' }}>{new Date(a.created_at).toLocaleDateString()}</td>
+                                        <td style={{ padding: '0.75rem' }}>
+                                            <span style={{ fontWeight: 700, color: a.overall_score > 70 ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                                                {a.overall_score}%
+                                            </span>
+                                        </td>
+                                        <td style={{ padding: '0.75rem' }}>{a.summary}</td>
+                                        <td style={{ padding: '0.75rem', textAlign: 'right' }}>
+                                            <button className="btn btn-secondary" style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', height: 'auto' }}>
+                                                View Full Report
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
 
                 {/* Audit Schedule */}
@@ -212,6 +273,30 @@ export const GovernanceDashboard = () => {
                     >
                         Update Register
                     </button>
+                </div>
+
+                {/* Training Records Section */}
+                <div className="card">
+                    <h3 className="flex items-center gap-2 mb-4 text-lg font-semibold">
+                        <Award className="text-success" size={20} />
+                        Staff Training Compliance
+                    </h3>
+                    <div className="space-y-3">
+                        {training.length === 0 ? (
+                            <p style={{ textAlign: 'center', color: 'var(--color-text-tertiary)', padding: '1rem' }}>No training records found.</p>
+                        ) : (
+                            training.map(t => (
+                                <div key={t.id} className="flex justify-between items-center p-3 bg-surface rounded-md border border-border">
+                                    <div>
+                                        <div className="font-medium text-main" style={{ fontSize: '0.9rem' }}>{t.module_name}</div>
+                                        <div className="text-xs text-secondary">{t.profiles?.full_name || 'System User'} • {new Date(t.completed_at).toLocaleDateString()}</div>
+                                    </div>
+                                    <span className="badge badge-success" style={{ fontSize: '0.75rem' }}>{t.score}%</span>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                    <button className="btn btn-secondary w-full mt-4 text-sm" onClick={() => navigate('/training/evisa')}>Assign New Module</button>
                 </div>
 
             </div>

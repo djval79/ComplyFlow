@@ -1,0 +1,37 @@
+name: Weekly Digest Emails
+
+on:
+  schedule:
+    # Runs every Monday at 8 AM UTC (9 AM UK in winter)
+    - cron: '0 8 * * 1'
+  
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  send-weekly-digests:
+    name: Send Weekly Compliance Digests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Send Weekly Digest Emails
+        run: |
+          echo "📧 Sending weekly compliance digest emails..."
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://arcyjifubkqihfkewovf.supabase.co/functions/v1/weekly-digest" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "Response: $BODY"
+          echo "HTTP Status: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "❌ Failed to send digests"
+            exit 1
+          fi
+          
+          echo "✅ Weekly digest emails sent successfully"

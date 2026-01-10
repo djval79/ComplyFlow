@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, User, Building2, AlertCircle, Loader2, Shield, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -15,7 +15,24 @@ export const Signup = () => {
     });
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [searchParams] = useSearchParams();
     const [success, setSuccess] = useState(false);
+    const [inviteData, setInviteData] = useState<{ orgId: string, email: string, role: string } | null>(null);
+
+    React.useEffect(() => {
+        const inviteCode = searchParams.get('invite');
+        if (inviteCode) {
+            try {
+                const decoded = JSON.parse(atob(inviteCode));
+                if (decoded.email && decoded.orgId) {
+                    setInviteData(decoded);
+                    setFormData(prev => ({ ...prev, email: decoded.email }));
+                }
+            } catch (error) {
+                console.error('Invalid invite code', error);
+            }
+        }
+    }, [searchParams]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -42,7 +59,9 @@ export const Signup = () => {
             formData.email,
             formData.password,
             formData.fullName,
-            formData.organizationName
+            inviteData ? 'Joined Organization' : formData.organizationName, // Name ignored if joining existing org
+            inviteData?.orgId,
+            inviteData?.role
         );
 
         if (error) {
@@ -87,9 +106,20 @@ export const Signup = () => {
                     <div className="auth-logo">
                         <Shield size={32} />
                     </div>
-                    <h1>Start Free Trial</h1>
-                    <p>14 days free, no credit card required</p>
+                    <h1>{inviteData ? 'Join Your Team' : 'Start Free Trial'}</h1>
+                    <p>{inviteData ? 'Create your account to access the team workspace' : '14 days free, no credit card required'}</p>
                 </div>
+
+                {/* Invite Banner */}
+                {inviteData && (
+                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <CheckCircle size={20} color="#16a34a" />
+                        <div>
+                            <strong style={{ display: 'block', color: '#166534', fontSize: '0.9rem' }}>Invitation Accepted</strong>
+                            <span style={{ fontSize: '0.8rem', color: '#15803d' }}>You are joining an existing organization.</span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Demo Mode Banner */}
                 {isDemo && (
@@ -133,20 +163,33 @@ export const Signup = () => {
 
                         <div className="form-group">
                             <label htmlFor="organizationName">Organisation Name</label>
-                            <div className="input-with-icon">
-                                <Building2 size={18} className="input-icon" />
-                                <input
-                                    id="organizationName"
-                                    name="organizationName"
-                                    type="text"
-                                    className="form-input"
-                                    placeholder="Care Co Ltd"
-                                    value={formData.organizationName}
-                                    onChange={handleChange}
-                                    required
-                                    disabled={isDemo}
-                                />
-                            </div>
+                            {inviteData ? (
+                                <div className="input-with-icon" style={{ opacity: 0.7, background: '#f8fafc' }}>
+                                    <Building2 size={18} className="input-icon" />
+                                    <input
+                                        type="text"
+                                        className="form-input"
+                                        value="Joining Existing Org"
+                                        disabled
+                                        style={{ cursor: 'not-allowed' }}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="input-with-icon">
+                                    <Building2 size={18} className="input-icon" />
+                                    <input
+                                        id="organizationName"
+                                        name="organizationName"
+                                        type="text"
+                                        className="form-input"
+                                        placeholder="Care Co Ltd"
+                                        value={formData.organizationName}
+                                        onChange={handleChange}
+                                        required
+                                        disabled={isDemo}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
 

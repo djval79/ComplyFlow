@@ -1,31 +1,157 @@
-import React, { useState } from 'react';
-import { ShieldCheck, User, Clock, AlertTriangle, CheckCircle, Search, Calendar, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ShieldCheck, User, Clock, AlertTriangle, CheckCircle, Search, Calendar, Loader2, Plus } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
+
+import { complianceService } from '../services/complianceService';
+import { UpgradePrompt } from '../components/ConversionWidgets';
 
 export const SponsorGuardian = () => {
-    const [filter, setFilter] = useState('all');
+    const { profile, isDemo } = useAuth();
+    const [workers, setWorkers] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState('');
     const [showCosModal, setShowCosModal] = useState(false);
-    const [showResolveModal, setShowResolveModal] = useState(false);
-    const [selectedWorker, setSelectedWorker] = useState<any>(null);
 
-    const workers = [
-        { id: 'W001', name: 'Sarah Jenkins', visa: 'Health & Care (SWV)', expiry: '2027-03-15', status: 'compliant', lastCheck: '2024-03-15' },
-        { id: 'W002', name: 'Raj Patel', visa: 'Health & Care (SWV)', expiry: '2025-06-20', status: 'compliant', lastCheck: '2024-01-10' },
-        { id: 'W003', name: 'Elena Rodriguez', visa: 'Health & Care (SWV)', expiry: '2025-04-10', status: 'warning', lastCheck: '2022-04-11', note: 'Visa expiring in < 4 months' },
-        { id: 'W004', name: 'Michael Chen', visa: 'Student (20hrs)', expiry: '2025-09-01', status: 'compliant', lastCheck: '2024-09-01' },
-        { id: 'W005', name: 'Amara Okeke', visa: 'Health & Care (SWV)', expiry: '2026-11-30', status: 'alert', lastCheck: 'Pending', note: 'Address update unreported' },
-    ];
+    const [isSaving, setIsSaving] = useState(false);
+
+    // New Worker State
+    const [newWorker, setNewWorker] = useState({
+        full_name: '',
+        visa_type: 'Health & Care (SWV)',
+        visa_expiry: '',
+        cos_number: ''
+    });
+
+    useEffect(() => {
+        if (profile?.organization_id) {
+            fetchWorkers();
+        }
+    }, [profile?.organization_id]);
+
+    const fetchWorkers = async () => {
+        if (!profile?.organization_id) return;
+        setLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('sponsored_workers')
+                .select('*')
+                .eq('organization_id', profile.organization_id)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            if (data) setWorkers(data);
+        } catch (err: any) {
+            console.error('Fetch workers error:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleAddWorker = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const orgId = profile?.organization_id;
+        if (!orgId) {
+            alert("Error: Your account profile is not fully loaded. This usually means your organization setup is incomplete. Try logging out and back in, or contact support.");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            console.log('[SponsorGuardian] Adding worker for org:', orgId);
+            const { data, error } = await supabase
+                .from('sponsored_workers')
+                .insert({
+                    ...newWorker,
+                    organization_id: orgId,
+                    status: 'compliant'
+                })
+                .select();
+
+            if (error) {
+                console.error('[SponsorGuardian] Insert error:', error);
+                throw error;
+            }
+
+            console.log('[SponsorGuardian] Worker added successfully:', data);
+
+            // Proactively refresh alerts to catch visa expiries
+            try {
+                await complianceService.refreshAlerts(orgId);
+            } catch (alertErr) {
+                console.warn('[SponsorGuardian] Alert refresh failed (non-critical):', alertErr);
+            }
+
+            setShowCosModal(false);
+            await fetchWorkers();
+            setNewWorker({ full_name: '', visa_type: 'Health & Care (SWV)', visa_expiry: '', cos_number: '' });
+        } catch (err: any) {
+            console.error('Error adding worker:', err);
+            alert('Error adding worker: ' + (err.message || 'Unknown database error. Check your permissions.'));
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    if (!profile) {
+        return (
+            <div className="container" style={{ padding: '4rem 1rem', textAlign: 'center' }}>
+                <div className="card">
+                    <Loader2 className="animate-spin" size={40} style={{ margin: '0 auto 1rem', color: 'var(--color-primary)' }} />
+                    <h2>Loading Your Profile...</h2>
+                    <p style={{ color: 'var(--color-text-secondary)' }}>If this takes too long, please ensure your account is fully set up.</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!profile.organization_id) {
+        return (
+            <div className="container" style={{ padding: '4rem 1rem', textAlign: 'center' }}>
+                <div className="card" style={{ maxWidth: '500px', margin: '0 auto', borderTop: '4px solid var(--color-danger)' }}>
+                    <AlertTriangle size={48} color="var(--color-danger)" style={{ margin: '0 auto 1rem' }} />
+                    <h2 style={{ marginBottom: '1rem' }}>Organization Missing</h2>
+                    <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
+                        Your account profile is not linked to an organization. This is required to manage staff and compliance.
+                    </p>
+                    <div className="flex flex-col gap-3">
+                        <button className="btn btn-primary" onClick={() => window.location.reload()}>
+                            Refresh Dashboard
+                        </button>
+                        <button className="btn btn-secondary" onClick={() => window.location.href = '/setup'}>
+                            Complete Setup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // FEATURE GATING: Pro Only
+    if (!['pro', 'enterprise'].includes(profile.subscription_tier || '') && !isDemo) {
+        return (
+            <div className="container animate-enter" style={{ padding: '4rem 1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+                <div style={{ maxWidth: '500px', width: '100%' }}>
+                    <UpgradePrompt
+                        feature="Sponsor Licence Guardian"
+                        description="Protect your A-Rating. Track visa expiries, mock audit your HR files, and get automated alerts. Essential for Home Office compliance."
+                    />
+                </div>
+            </div>
+        );
+    }
 
     const getStatusColor = (s: string) => {
         if (s === 'compliant') return 'var(--color-success)';
         if (s === 'warning') return 'var(--color-warning)';
-        return 'var(--color-danger)';
+        if (s === 'alert' || s === 'expired') return 'var(--color-danger)';
+        return 'var(--color-text-secondary)';
     };
 
-    const getStatusBadge = (s: string) => {
-        if (s === 'compliant') return <span className="badge badge-success">Compliant</span>;
-        if (s === 'warning') return <span className="badge badge-warning">Review Needed</span>;
-        return <span className="badge badge-danger">Action Required</span>;
-    };
+    const filteredWorkers = workers.filter(w =>
+        w.full_name.toLowerCase().includes(filter.toLowerCase())
+    );
 
     return (
         <div className="container animate-enter" style={{ padding: '2rem 1rem' }}>
@@ -39,8 +165,7 @@ export const SponsorGuardian = () => {
                         </h1>
                         <div className="flex gap-4 text-sm" style={{ color: '#0c4a6e' }}>
                             <div className="flex items-center gap-1"><CheckCircle size={16} /> Status: <strong>A-Rated</strong></div>
-                            <div className="flex items-center gap-1"><Calendar size={16} /> Renewal: <strong>14 Aug 2028</strong></div>
-                            <div className="flex items-center gap-1"><User size={16} /> Certificates (CoS): <strong>8 / 15 Used</strong></div>
+                            <div className="flex items-center gap-1"><User size={16} /> Sponsored Staff: <strong>{workers.length} Members</strong></div>
                         </div>
                     </div>
 
@@ -50,217 +175,118 @@ export const SponsorGuardian = () => {
                             style={{ background: '#0284c7', borderColor: '#0284c7' }}
                             onClick={() => setShowCosModal(true)}
                         >
-                            + Assign CoS
-                        </button>
-                        <button
-                            className="btn btn-secondary"
-                            style={{ background: 'white' }}
-                            onClick={() => alert('Report Activity Module: Connecting to SMS... (Simulated)')}
-                        >
-                            Report Activity
+                            <Plus size={16} /> Add Worker / CoS
                         </button>
                     </div>
                 </div>
             </div>
 
-            {/* CoS Modal (Simulated) */}
+            {/* CoS Modal */}
             {showCosModal && (
                 <div style={{
                     position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
                     background: 'rgba(0,0,0,0.5)', zIndex: 999,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
                 }}>
-                    <div className="card animate-enter" style={{ width: '400px', padding: '2rem' }}>
-                        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>Assign Certificate of Sponsorship</h2>
-                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
-                            Allocate an Undefined CoS to a new worker. Make sure you have verified their Right to Work first.
-                        </p>
+                    <form onSubmit={handleAddWorker} className="card animate-enter" style={{ width: '450px', padding: '2rem' }}>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1rem' }}>Assign New CoS</h2>
 
                         <div className="space-y-4 mb-6">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Worker Name</label>
-                                <input type="text" className="form-input w-full" placeholder="e.g. John Doe" />
+                                <label className="form-label">Full Name</label>
+                                <input
+                                    type="text" required className="form-input w-full"
+                                    value={newWorker.full_name}
+                                    onChange={e => setNewWorker({ ...newWorker, full_name: e.target.value })}
+                                />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium mb-1">Passport Number</label>
-                                <input type="text" className="form-input w-full" placeholder="e.g. P12345678" />
+                                <label className="form-label">Visa Expiry Date</label>
+                                <input
+                                    type="date" required className="form-input w-full"
+                                    value={newWorker.visa_expiry}
+                                    onChange={e => setNewWorker({ ...newWorker, visa_expiry: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="form-label">CoS Number (Optional)</label>
+                                <input
+                                    type="text" className="form-input w-full" placeholder="e.g. C2X12345"
+                                    value={newWorker.cos_number}
+                                    onChange={e => setNewWorker({ ...newWorker, cos_number: e.target.value })}
+                                />
                             </div>
                         </div>
 
                         <div className="flex justify-end gap-3">
-                            <button
-                                className="btn btn-secondary"
-                                onClick={() => setShowCosModal(false)}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                className="btn btn-primary"
-                                onClick={() => {
-                                    alert('CoS Generated! Reference: C1234X');
-                                    setShowCosModal(false);
-                                }}
-                            >
-                                Generate CoS
+                            <button type="button" className="btn btn-secondary" onClick={() => setShowCosModal(false)}>Cancel</button>
+                            <button type="submit" className="btn btn-primary" disabled={isSaving}>
+                                {isSaving ? <Loader2 className="animate-spin" size={18} /> : 'Save Worker'}
                             </button>
                         </div>
-                    </div>
+                    </form>
                 </div>
             )}
-
-            {/* Alerts */}
-            <div className="flex gap-4 mb-6 flex-wrap">
-                <div className="card flex-1" style={{ background: '#fef2f2', borderColor: '#fecaca', padding: '1rem' }}>
-                    <div className="flex items-start gap-3">
-                        <AlertTriangle color="#dc2626" className="mt-1" />
-                        <div>
-                            <h3 style={{ fontSize: '1rem', color: '#991b1b' }}>1 Unreported Change</h3>
-                            <p style={{ fontSize: '0.875rem', color: '#b91c1c' }}>Worker W005 (Amara Okeke) changed address 8 days ago. Report by Friday.</p>
-                            <button
-                                className="mt-2 text-sm font-medium"
-                                style={{ color: '#dc2626', textDecoration: 'underline', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-                                onClick={() => setShowResolveModal(true)}
-                            >
-                                Resolve now
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
             {/* Workers List */}
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                 <div style={{ padding: '1rem', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
-                    <h3 style={{ fontSize: '1.1rem' }}>Sponsored Workers (5)</h3>
+                    <h3 style={{ fontSize: '1.1rem' }}>Sponsored Workforce</h3>
                     <div className="flex gap-2">
                         <div style={{ position: 'relative' }}>
                             <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                            <input type="text" placeholder="Search worker..." className="form-input" style={{ paddingLeft: '2.2rem', width: '250px' }} />
+                            <input
+                                type="text" placeholder="Search workers..." className="form-input"
+                                style={{ paddingLeft: '2.2rem', width: '250px' }}
+                                value={filter}
+                                onChange={e => setFilter(e.target.value)}
+                            />
                         </div>
                     </div>
                 </div>
 
                 <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                        <thead style={{ background: '#f1f5f9', color: '#475569', textAlign: 'left' }}>
-                            <tr>
-                                <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Worker</th>
-                                <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Visa Type</th>
-                                <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Expiry Date</th>
-                                <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Compliance</th>
-                                <th style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {workers.map(w => (
-                                <tr key={w.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                                    <td style={{ padding: '1rem' }}>
-                                        <div style={{ fontWeight: 500 }}>{w.name}</div>
-                                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: {w.id}</div>
-                                    </td>
-                                    <td style={{ padding: '1rem' }}>{w.visa}</td>
-                                    <td style={{ padding: '1rem' }}>
-                                        <div className="flex items-center gap-2">
-                                            {w.expiry}
-                                            {w.status !== 'compliant' && <Clock size={14} color={getStatusColor(w.status)} />}
-                                        </div>
-                                    </td>
-                                    <td style={{ padding: '1rem' }}>
-                                        <div className="flex flex-col gap-1">
-                                            {getStatusBadge(w.status)}
-                                            {w.note && <span style={{ fontSize: '0.75rem', color: getStatusColor(w.status) }}>{w.note}</span>}
-                                        </div>
-                                    </td>
-                                    <td style={{ padding: '1rem' }}>
-                                        <button
-                                            className="btn btn-secondary"
-                                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }}
-                                            onClick={() => setSelectedWorker(w)}
-                                        >
-                                            View File
-                                        </button>
-                                    </td>
+                    {loading ? (
+                        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            <Loader2 className="animate-spin mx-auto mb-2" /> Loading records...
+                        </div>
+                    ) : filteredWorkers.length === 0 ? (
+                        <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                            No workers found. Add your first sponsored staff member to start tracking.
+                        </div>
+                    ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                            <thead style={{ background: '#f1f5f9', color: '#475569', textAlign: 'left' }}>
+                                <tr>
+                                    <th style={{ padding: '1rem', fontWeight: 600 }}>Worker Name</th>
+                                    <th style={{ padding: '1rem', fontWeight: 600 }}>Visa Type</th>
+                                    <th style={{ padding: '1rem', fontWeight: 600 }}>Expiry Date</th>
+                                    <th style={{ padding: '1rem', fontWeight: 600 }}>Status</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                {filteredWorkers.map(w => (
+                                    <tr key={w.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                                        <td style={{ padding: '1rem', fontWeight: 500 }}>{w.full_name}</td>
+                                        <td style={{ padding: '1rem' }}>{w.visa_type}</td>
+                                        <td style={{ padding: '1rem' }}>
+                                            <div className="flex items-center gap-2">
+                                                {new Date(w.visa_expiry).toLocaleDateString()}
+                                                {w.status !== 'compliant' && <Clock size={14} color={getStatusColor(w.status)} />}
+                                            </div>
+                                        </td>
+                                        <td style={{ padding: '1rem' }}>
+                                            <span className={`badge badge-${w.status === 'compliant' ? 'success' : 'warning'}`}>
+                                                {w.status.toUpperCase()}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
                 </div>
             </div>
-
-            {/* Resolve Issue Modal */}
-            {showResolveModal && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', zIndex: 999,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    <div className="card animate-enter" style={{ width: '450px', padding: '2rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Report Address Change</h2>
-                            <button onClick={() => setShowResolveModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
-                        </div>
-                        <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
-                            Submit the address change notification to the Home Office via the SMS portal.
-                        </p>
-                        <div className="space-y-4 mb-6">
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Worker: Amara Okeke (W005)</label>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">New Address</label>
-                                <textarea className="form-input w-full" rows={3} placeholder="Enter the new address..." />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Change Date</label>
-                                <input type="date" className="form-input w-full" />
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-3">
-                            <button className="btn btn-secondary" onClick={() => setShowResolveModal(false)}>Cancel</button>
-                            <button className="btn btn-primary" onClick={() => { alert('Change reported to Home Office via SMS'); setShowResolveModal(false); }}>Submit Report</button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Worker File Modal */}
-            {selectedWorker && (
-                <div style={{
-                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-                    background: 'rgba(0,0,0,0.5)', zIndex: 999,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                    <div className="card animate-enter" style={{ width: '500px', padding: '2rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>{selectedWorker.name} - Worker File</h2>
-                            <button onClick={() => setSelectedWorker(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
-                        </div>
-                        <div className="space-y-4">
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
-                                <span>Worker ID:</span><strong>{selectedWorker.id}</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
-                                <span>Visa Type:</span><strong>{selectedWorker.visa}</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
-                                <span>Expiry Date:</span><strong>{selectedWorker.expiry}</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
-                                <span>Last RTW Check:</span><strong>{selectedWorker.lastCheck}</strong>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)' }}>
-                                <span>Status:</span><strong style={{ color: selectedWorker.status === 'compliant' ? 'var(--color-success)' : 'var(--color-warning)' }}>{selectedWorker.status.charAt(0).toUpperCase() + selectedWorker.status.slice(1)}</strong>
-                            </div>
-                            {selectedWorker.note && (
-                                <div style={{ padding: '0.75rem', background: '#fef3c7', borderRadius: 'var(--radius-sm)', color: '#92400e' }}>
-                                    <strong>Note:</strong> {selectedWorker.note}
-                                </div>
-                            )}
-                        </div>
-                        <button className="btn btn-primary w-full mt-6" onClick={() => setSelectedWorker(null)}>Close</button>
-                    </div>
-                </div>
-            )}
 
         </div>
     );

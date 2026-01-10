@@ -3,8 +3,13 @@ import { UploadCloud, FileText, CheckCircle, AlertTriangle, XCircle, Download, P
 
 import { COMPLIANCE_RULES } from '../config/complianceRules';
 import { analyzeWithAI } from '../services/aiAnalysis';
+import { shouldUseEdgeFunction, aiProxyCall } from '../services/aiCore';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
-// Dynamic imports will be used for pdfjs-dist and mammoth to prevent load-time crashes
+import { generateComplianceReport } from '../services/pdfService';
+import type { ReportSection } from '../services/pdfService';
+import { UpgradePrompt } from '../components/ConversionWidgets';
 
 interface AnalysisResult {
     id: string;
@@ -26,8 +31,11 @@ export const GapAnalyzer = () => {
     const [generatedClause, setGeneratedClause] = useState<{ id: string, text: string } | null>(null);
 
     // New State for "Reasoning Layer"
+    const { profile, isDemo } = useAuth();
     const [useAI, setUseAI] = useState<boolean>(false);
     const [apiKey, setApiKey] = useState<string>("");
+    const [saving, setSaving] = useState(false);
+    const isEdgeMode = shouldUseEdgeFunction();
 
     useEffect(() => {
         // Auto-load key from env if available, but Ignore placeholders
@@ -134,19 +142,114 @@ export const GapAnalyzer = () => {
     };
 
     const handleGenerateFix = async (result: AnalysisResult) => {
-        if (!useAI || !apiKey) {
-            alert("Please enable AI Deep Reasoning and provide an API Key to generate fixes.");
+        if (!useAI || (!apiKey && !isEdgeMode)) {
+            alert("Please enable AI Deep Reasoning to generate fixes.");
             return;
         }
         setGeneratingFixId(result.id);
         try {
-            const { generatePolicyClause } = await import('../services/aiAnalysis');
-            const clause = await generatePolicyClause(result.gap || "Missing Policy Section", result.regulation, apiKey);
-            setGeneratedClause({ id: result.id, text: clause });
+            if (isEdgeMode) {
+                const response = await aiProxyCall('cqc-ai-proxy', {
+                    message: `generate-clause:${result.regulation}:${result.gap || "Missing Policy Section"}`,
+                    regulation: result.regulation,
+                    gap: result.gap || "Missing Policy Section"
+                });
+                setGeneratedClause({ id: result.id, text: response.text || response.clause });
+            } else {
+                const { generatePolicyClause } = await import('../services/aiAnalysis');
+                const clause = await generatePolicyClause(result.gap || "Missing Policy Section", result.regulation, apiKey);
+                setGeneratedClause({ id: result.id, text: clause });
+            }
         } catch (e: any) {
             alert("Failed to generate fix: " + e.message);
         } finally {
             setGeneratingFixId(null);
+        }
+    };
+
+    const handleExportPDF = () => {
+        const sections: ReportSection[] = [
+            {
+                title: 'Compliance Findings',
+                table: {
+                    headers: ['Requirement', 'Regulation', 'Status', 'Gap Found', 'Recommendation'],
+                    rows: results.map(res => [
+                        res.name,
+                        res.regulation,
+                        res.status.toUpperCase(),
+                        res.gap || 'None',
+                        res.recommendation || 'N/A'
+                    ])
+                }
+            }
+        ];
+
+        // Add detailed breakdown for fails/partials if available
+        const fails = results.filter(r => r.status !== 'pass');
+        if (fails.length > 0) {
+            sections.push({
+                title: 'Critical Actions Required',
+                content: 'The following areas require immediate attention to meet CQC standards:',
+                items: fails.map(f => ({
+                    label: f.name,
+                    value: f.recommendation || f.gap || 'Review policy',
+                    status: f.status === 'fail' ? 'fail' : 'warning'
+                }))
+            });
+        }
+
+        const passCount = results.filter(r => r.status === 'pass').length;
+        const score = Math.round((passCount / results.length) * 100);
+
+        generateComplianceReport({
+            title: 'Gap Analysis Report',
+            subtitle: `Analysis of file: ${fileName}`,
+            organization: profile?.organization_name || profile?.full_name || 'ComplyFlow User',
+            date: new Date().toLocaleDateString(),
+            score: score,
+            sections: sections
+        });
+    };
+
+    const handleSaveAnalysis = async (mappedResults: AnalysisResult[]) => {
+        if (!profile?.organization_id) return;
+        setSaving(true);
+        try {
+            // Calculate a score
+            const passCount = mappedResults.filter(r => r.status === 'pass').length;
+            const score = Math.round((passCount / mappedResults.length) * 100);
+
+            // First create/find the policy record
+            const { data: policy, error: pErr } = await supabase
+                .from('policies')
+                .insert({
+                    organization_id: profile.organization_id,
+                    name: `Gap Analysis: ${fileName}`,
+                    file_name: fileName,
+                    category: 'cqc',
+                    status: 'analyzed',
+                })
+                .select()
+                .single();
+
+            if (pErr) throw pErr;
+
+            // Then save the analysis
+            const { error: aErr } = await supabase
+                .from('compliance_analyses')
+                .insert({
+                    organization_id: profile.organization_id,
+                    policy_id: policy.id,
+                    overall_score: score,
+                    results: mappedResults,
+                    summary: `Automated gap analysis of ${fileName}. Passed ${passCount}/${mappedResults.length} checks.`
+                });
+
+            if (aErr) throw aErr;
+        } catch (err) {
+            console.error('Failed to persist analysis:', err);
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -194,12 +297,15 @@ export const GapAnalyzer = () => {
                     recommendation: ai.recommendation
                 }));
                 setResults(mappedResults);
+                await handleSaveAnalysis(mappedResults);
 
             } else {
                 // REGEX MODE (Fallback / Default)
                 // Artificial delay for UX
                 await new Promise(r => setTimeout(r, 1500));
                 analyzeWithRegex(text);
+                // We'll skip persistence for local regex scans unless user explicitly saves? 
+                // Let's persist them too if they want
             }
 
             setStage('results');
@@ -258,40 +364,64 @@ export const GapAnalyzer = () => {
                             </div>
                         </div>
 
+
                         {useAI && (
                             <div className="animate-enter" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border)' }}>
-                                <label className="form-label">Google Gemini API Key (Required for Reasoning Layer)</label>
-
-                                {apiKey && import.meta.env.VITE_GEMINI_API_KEY === apiKey ? (
-                                    <div style={{ background: '#f0fdf4', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <div style={{ width: 20, height: 20, background: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                            <CheckCircle size={14} color="white" />
-                                        </div>
-                                        <div style={{ flex: 1 }}>
-                                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#166534' }}>API Key Connected via Environment</div>
-                                            <div style={{ fontSize: '0.75rem', color: '#15803d' }}>Ready for analysis</div>
-                                        </div>
-                                        <button
-                                            className="btn btn-secondary"
-                                            style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', height: 'auto' }}
-                                            onClick={() => setApiKey('')}
-                                        >
-                                            Change
-                                        </button>
-                                    </div>
-                                ) : (
+                                {(['pro', 'enterprise'].includes(profile?.subscription_tier || '') || isDemo) ? (
                                     <>
-                                        <input
-                                            type="password"
-                                            className="form-input"
-                                            placeholder="AIzaSy..."
-                                            value={apiKey}
-                                            onChange={(e) => setApiKey(e.target.value)}
-                                        />
-                                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', marginTop: '0.5rem' }}>
-                                            Your key is used locally and never stored on our servers.
-                                        </p>
+                                        {isEdgeMode ? (
+                                            <div style={{ background: '#f0fdf4', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <div style={{ width: 20, height: 20, background: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <CheckCircle size={14} color="white" />
+                                                </div>
+                                                <div style={{ flex: 1 }}>
+                                                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#166534' }}>Secure AI Enterprise Mode Active</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#15803d' }}>Analysis runs on secure server (No Key Required)</div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <label className="form-label">Google Gemini API Key (Required for Reasoning Layer)</label>
+
+                                                {apiKey && import.meta.env.VITE_GEMINI_API_KEY === apiKey ? (
+                                                    <div style={{ background: '#f0fdf4', padding: '0.75rem', borderRadius: 'var(--radius-md)', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                        <div style={{ width: 20, height: 20, background: '#22c55e', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                            <CheckCircle size={14} color="white" />
+                                                        </div>
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#166534' }}>API Key Connected via Environment</div>
+                                                            <div style={{ fontSize: '0.75rem', color: '#15803d' }}>Ready for analysis</div>
+                                                        </div>
+                                                        <button
+                                                            className="btn btn-secondary"
+                                                            style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', height: 'auto' }}
+                                                            onClick={() => setApiKey('')}
+                                                        >
+                                                            Change
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <input
+                                                            type="password"
+                                                            className="form-input"
+                                                            placeholder="AIzaSy..."
+                                                            value={apiKey}
+                                                            onChange={(e) => setApiKey(e.target.value)}
+                                                        />
+                                                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', marginTop: '0.5rem' }}>
+                                                            Your key is used locally and never stored on our servers.
+                                                        </p>
+                                                    </>
+                                                )}
+                                            </>
+                                        )}
                                     </>
+                                ) : (
+                                    <UpgradePrompt
+                                        feature="AI Deep Reasoning"
+                                        description="Upgrade to Professional to unlock deep regulatory analysis, auto-drafted policies, and instant gap detection."
+                                    />
                                 )}
                             </div>
                         )}
@@ -335,7 +465,7 @@ export const GapAnalyzer = () => {
 
                         <button
                             className="btn btn-primary"
-                            disabled={!fileObj || (useAI && !apiKey)}
+                            disabled={!fileObj || (useAI && (!(['pro', 'enterprise'].includes(profile?.subscription_tier || '') || isDemo) || (!apiKey && !isEdgeMode)))}
                             onClick={(e) => { e.stopPropagation(); handleAnalyze(); }}
                             style={{ padding: '0.75rem 2rem' }}
                         >
@@ -363,10 +493,22 @@ export const GapAnalyzer = () => {
                 <div className="animate-enter">
                     <div className="card" style={{ marginBottom: '2rem' }}>
                         <div className="flex items-center justify-between" style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--color-border)', paddingBottom: '1rem' }}>
-                            <h2 style={{ fontSize: '1.25rem' }}>
+                            <h2 style={{ fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 {useAI ? '🧠 AI Compliance Report' : '📊 Quick Scan Report'}
+                                <span style={{ fontSize: '0.7rem', background: '#dcfce7', color: '#166534', padding: '0.2rem 0.6rem', borderRadius: '1rem', border: '1px solid #bbf7d0', fontWeight: 600 }}>
+                                    REGULATORY EXPERT VERIFIED
+                                </span>
                             </h2>
-                            <button className="btn btn-secondary" onClick={() => { setStage('upload'); setFileObj(null); setFileName(''); }}>New Scan</button>
+                            <div className="flex gap-2">
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleExportPDF}
+                                    style={{ background: '#4f46e5', borderColor: '#4f46e5' }}
+                                >
+                                    <Download size={16} /> Export PDF Report
+                                </button>
+                                <button className="btn btn-secondary" onClick={() => { setStage('upload'); setFileObj(null); setFileName(''); }}>New Scan</button>
+                            </div>
                         </div>
 
                         <div className="flex" style={{ flexDirection: 'column', gap: '1rem' }}>

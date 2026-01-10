@@ -1,7 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ComplianceProvider } from './context/ComplianceContext';
+import { ToastProvider } from './components/ToastProvider';
+import { SupportWidget } from './components/SupportWidget';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { Onboarding } from './pages/Onboarding';
@@ -10,12 +12,18 @@ import { GapAnalyzer } from './pages/GapAnalyzer';
 import { SponsorGuardian } from './pages/SponsorGuardian';
 import { TemplateLibrary } from './pages/Templates';
 import { InspectionSimulator } from './pages/InspectionSimulator';
+import { MockInspection } from './pages/MockInspection';
+import { InterviewTraining } from './pages/InterviewTraining';
 import { VisitingRights } from './pages/VisitingRights';
 import { TrainingEVisa } from './pages/TrainingEVisa';
 import { RegulatoryIntelligence } from './pages/RegulatoryIntelligence';
+import { CQCAdvisor } from './pages/CQCAdvisor';
 import { GovernanceDashboard } from './pages/Governance';
 import { Pricing } from './pages/Pricing';
 import { Settings } from './pages/Settings';
+import { LandingPage } from './pages/LandingPage';
+import { Terms } from './pages/Terms';
+import { Privacy } from './pages/Privacy';
 
 // ============ LOADING SCREEN ============
 function LoadingScreen() {
@@ -46,13 +54,18 @@ function LoadingScreen() {
 
 // ============ PROTECTED ROUTE ============
 function ProtectedRoute() {
-  const { loading, isAuthenticated } = useAuth();
+  const { loading, isAuthenticated, profile } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <LoadingScreen />;
   }
 
   if (isAuthenticated) {
+    // If authenticated but not onboarded, and not already on the setup page
+    if (profile && !profile.onboarding_completed && location.pathname !== '/setup') {
+      return <Navigate to="/setup" replace />;
+    }
     return <Outlet />;
   }
 
@@ -90,6 +103,8 @@ function AppRoutes() {
         path="/signup"
         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Signup />}
       />
+      <Route path="/terms" element={<Terms />} />
+      <Route path="/privacy" element={<Privacy />} />
 
       {/* Protected routes */}
       <Route element={<ProtectedRoute />}>
@@ -97,12 +112,15 @@ function AppRoutes() {
           <Route path="/setup" element={<Onboarding />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/cqc/gap-analysis" element={<GapAnalyzer />} />
+          <Route path="/cqc/advisor" element={<CQCAdvisor />} />
           <Route path="/cqc/gap-analyzer" element={<Navigate to="/cqc/gap-analysis" replace />} />
           <Route path="/cqc" element={<Navigate to="/cqc/gap-analysis" replace />} />
           <Route path="/sponsor" element={<SponsorGuardian />} />
           <Route path="/resources" element={<RegulatoryIntelligence />} />
           <Route path="/templates" element={<TemplateLibrary />} />
           <Route path="/cqc/simulator" element={<InspectionSimulator />} />
+          <Route path="/cqc/mock-inspection" element={<MockInspection />} />
+          <Route path="/cqc/interview-training" element={<InterviewTraining />} />
           <Route path="/cqc/visiting-rights" element={<VisitingRights />} />
           <Route path="/governance" element={<GovernanceDashboard />} />
           <Route path="/training/evisa" element={<TrainingEVisa />} />
@@ -111,9 +129,11 @@ function AppRoutes() {
         </Route>
       </Route>
 
-      {/* Default redirect */}
-      <Route path="/" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
-      <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />
+      {/* Public landing page */}
+      <Route path="/" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
+
+      {/* Catch-all redirect */}
+      <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/"} replace />} />
     </Routes>
   );
 }
@@ -123,9 +143,12 @@ function App() {
   return (
     <AuthProvider>
       <ComplianceProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
+        <ToastProvider>
+          <BrowserRouter>
+            <AppRoutes />
+            <SupportWidget />
+          </BrowserRouter>
+        </ToastProvider>
       </ComplianceProvider>
     </AuthProvider>
   );

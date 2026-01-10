@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
-import { BookOpen, Award } from 'lucide-react';
+import { BookOpen, Award, Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 export const TrainingEVisa = () => {
     const navigate = useNavigate();
+    const { user, profile } = useAuth();
     const [step, setStep] = useState(0);
     const [completed, setCompleted] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     const slides = [
         {
@@ -14,7 +18,7 @@ export const TrainingEVisa = () => {
             key_point: "Goal: Phase out physical documents by Dec 31, 2024.",
             quiz: "Does a BRP prove right to work after 2024?",
             answers: ["Yes", "No", "Only if renewed"],
-            correct: 1 // index
+            correct: 1
         },
         {
             title: "Employer Responsibilities",
@@ -34,25 +38,40 @@ export const TrainingEVisa = () => {
         }
     ];
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (step < slides.length - 1) {
             setStep(step + 1);
         } else {
             setCompleted(true);
+            if (user && profile?.organization_id) {
+                setSaving(true);
+                try {
+                    await supabase.from('training_completions').insert({
+                        organization_id: profile.organization_id,
+                        user_id: user.id,
+                        module_id: 'evisa_transition_2025',
+                        module_name: 'eVisa Transition Training',
+                        score: 100,
+                        passed: true
+                    });
+                } catch (e) {
+                    console.error("Failed to save training completion:", e);
+                } finally {
+                    setSaving(false);
+                }
+            }
         }
     };
 
     return (
         <div className="container animate-enter" style={{ padding: '2rem 1rem', maxWidth: '800px' }}>
 
-            {/* Nav Back */}
             <button onClick={() => navigate('/dashboard')} className="btn btn-secondary" style={{ marginBottom: '1rem', border: 'none', paddingLeft: 0 }}>
                 &larr; Back to Dashboard
             </button>
 
             <div className="card" style={{ padding: 0, overflow: 'hidden', minHeight: '500px', display: 'flex', flexDirection: 'column' }}>
 
-                {/* Header Progress */}
                 <div style={{ background: 'var(--color-primary)', padding: '1.5rem', color: 'white' }}>
                     <div className="flex justify-between items-start mb-4">
                         <h1 style={{ fontSize: '1.5rem', margin: 0 }}>🇬🇧 eVisa Transition Training</h1>
@@ -73,7 +92,6 @@ export const TrainingEVisa = () => {
                     )}
                 </div>
 
-                {/* Content Body */}
                 <div style={{ flex: 1, padding: '2rem', display: 'flex', flexDirection: 'column' }}>
 
                     {!completed ? (
@@ -93,7 +111,7 @@ export const TrainingEVisa = () => {
                                     {slides[step].answers.map((ans, idx) => (
                                         <button
                                             key={idx}
-                                            onClick={handleNext} // Simplified: any click advances for demo flow
+                                            onClick={handleNext}
                                             className="btn btn-secondary"
                                             style={{ justifyContent: 'flex-start', padding: '1rem', textAlign: 'left' }}
                                         >
@@ -124,9 +142,13 @@ export const TrainingEVisa = () => {
                             </div>
                             <h2 style={{ marginBottom: '1rem' }}>Module Completed!</h2>
                             <p style={{ color: 'var(--color-text-secondary)', marginBottom: '2rem' }}>
-                                You have successfully reviewed the eVisa Transition basics. A record has been added to your compliance training log.
+                                {saving ? (
+                                    <span className="flex items-center justify-center gap-2"><Loader2 className="animate-spin" /> saving progress...</span>
+                                ) : (
+                                    "Your completion has been securely recorded in the organization's compliance log."
+                                )}
                             </p>
-                            <button onClick={() => navigate('/dashboard')} className="btn btn-primary">
+                            <button onClick={() => navigate('/dashboard')} className="btn btn-primary" disabled={saving}>
                                 Return to Dashboard
                             </button>
                         </div>

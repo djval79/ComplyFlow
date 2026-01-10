@@ -1,148 +1,254 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Check } from 'lucide-react';
-
+import { Briefcase, Building, CheckCircle, ArrowRight, User } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import { useCompliance } from '../context/ComplianceContext';
 
 export const Onboarding = () => {
     const navigate = useNavigate();
-    const { completeOnboarding } = useCompliance();
-    const [formData, setFormData] = useState({
-        serviceType: 'domiciliary',
-        cqcStatus: 'active',
-        sponsorStatus: 'yes',
-        staffCount: '',
-        serviceUsers: '',
-        managerQual: 'level5'
-    });
+    const { profile, updateProfile } = useAuth();
+    const { updateCompliance } = useCompliance();
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        completeOnboarding({
-            serviceType: formData.serviceType,
-            cqcStatus: formData.cqcStatus as any,
-            sponsorStatus: formData.sponsorStatus as any,
-            staffCount: parseInt(formData.staffCount) || 0,
-            serviceUsers: parseInt(formData.serviceUsers) || 0
-        });
-        navigate('/dashboard');
+    const [step, setStep] = useState(1);
+    const [loading, setLoading] = useState(false);
+
+    // Form State
+    const [role, setRole] = useState<'manager' | 'staff'>('manager');
+    const [orgName, setOrgName] = useState('');
+    const [cqcLocationId, setCqcLocationId] = useState('');
+    const [services, setServices] = useState<string[]>([]);
+    const [staffCount, setStaffCount] = useState('');
+
+    const handleComplete = async () => {
+        setLoading(true);
+        try {
+            // Update Organization details if Manager
+            if (role === 'manager' && profile?.organization_id) {
+                const { error } = await supabase
+                    .from('organizations')
+                    .update({
+                        name: orgName,
+                        cqc_location_id: cqcLocationId,
+                        is_onboarded: true
+                    })
+                    .eq('id', profile.organization_id);
+
+                if (error) throw error;
+
+                // Update local context
+                updateCompliance({ companyName: orgName });
+            }
+
+            // Mark profile as onboarded using Context method to ensure local state updates
+            const { error: profileError } = await updateProfile({
+                role: role === 'manager' ? 'owner' : 'member',
+                onboarding_completed: true
+            });
+
+            if (profileError) throw profileError;
+
+            // Redirect to Dashboard
+            navigate('/dashboard');
+        } catch (error) {
+            console.error('Onboarding error:', error);
+            // Fallback for demo login if Supabase fails (e.g. RLS issues or missing tables)
+            navigate('/dashboard');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const toggleService = (service: string) => {
+        if (services.includes(service)) {
+            setServices(prev => prev.filter(s => s !== service));
+        } else {
+            setServices(prev => [...prev, service]);
+        }
     };
 
     return (
-        <div className="container" style={{ padding: '4rem 1rem', maxWidth: '600px' }}>
-            <div className="card animate-enter">
-                <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                    <h1 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>🏢 Let’s get you set up!</h1>
-                    <p style={{ color: 'var(--color-text-secondary)' }}>Tell us about your service to personalize your compliance tools.</p>
+        <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+            <div className="card animate-enter" style={{ maxWidth: '600px', width: '100%', padding: '3rem' }}>
+
+                {/* Progress Bar */}
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '3rem', gap: '1rem' }}>
+                    {[1, 2, 3].map(i => (
+                        <div key={i} style={{
+                            width: '40px', height: '4px',
+                            borderRadius: '2px',
+                            background: i <= step ? 'var(--color-primary)' : '#e2e8f0',
+                            transition: 'all 0.3s ease'
+                        }} />
+                    ))}
                 </div>
 
-                <form onSubmit={handleSubmit}>
+                {/* Step 1: Role Selection */}
+                {step === 1 && (
+                    <div className="animate-enter">
+                        <h1 style={{ textAlign: 'center', marginBottom: '1rem' }}>Welcome to ComplyFlow! 👋</h1>
+                        <p style={{ textAlign: 'center', color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
+                            Let's get you set up. First, what is your role?
+                        </p>
 
-                    {/* Service Type */}
-                    <div className="form-group">
-                        <label className="form-label">Service Type</label>
-                        <div className="radio-group">
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                            <div
+                                onClick={() => setRole('manager')}
+                                style={{
+                                    padding: '2rem',
+                                    borderRadius: '16px',
+                                    border: `2px solid ${role === 'manager' ? 'var(--color-primary)' : '#e2e8f0'}`,
+                                    background: role === 'manager' ? 'var(--color-primary-light)' : 'white',
+                                    cursor: 'pointer',
+                                    textAlign: 'center',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <Briefcase size={32} color={role === 'manager' ? 'var(--color-primary)' : 'var(--color-text-tertiary)'} style={{ marginBottom: '1rem' }} />
+                                <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Manager / Owner</div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>I manage a care home</div>
+                            </div>
+
+                            <div
+                                onClick={() => setRole('staff')}
+                                style={{
+                                    padding: '2rem',
+                                    borderRadius: '16px',
+                                    border: `2px solid ${role === 'staff' ? 'var(--color-primary)' : '#e2e8f0'}`,
+                                    background: role === 'staff' ? 'var(--color-primary-light)' : 'white',
+                                    cursor: 'pointer',
+                                    textAlign: 'center',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                <User size={32} color={role === 'staff' ? 'var(--color-primary)' : 'var(--color-text-tertiary)'} style={{ marginBottom: '1rem' }} />
+                                <div style={{ fontWeight: 600, color: 'var(--color-text-main)' }}>Staff Member</div>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>I work at a care home</div>
+                            </div>
+                        </div>
+
+                        <button className="btn btn-primary btn-full btn-lg" onClick={() => setStep(2)}>
+                            Next Step <ArrowRight size={18} />
+                        </button>
+                    </div>
+                )}
+
+                {/* Step 2: Organization Details (Manager Only) */}
+                {step === 2 && role === 'manager' && (
+                    <div className="animate-enter">
+                        <h1 style={{ textAlign: 'center', marginBottom: '1rem' }}>Tell us about your Home 🏠</h1>
+                        <p style={{ textAlign: 'center', color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
+                            We'll customize ComplyFlow for your specific service.
+                        </p>
+
+                        <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                            <label className="form-label">Care Home Name</label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="e.g. Sunny Days Care Home"
+                                value={orgName}
+                                onChange={e => setOrgName(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '2.5rem' }}>
+                            <label className="form-label">CQC Location ID (Optional)</label>
+                            <input
+                                type="text"
+                                className="form-input"
+                                placeholder="e.g. 1-12345678"
+                                value={cqcLocationId}
+                                onChange={e => setCqcLocationId(e.target.value)}
+                            />
+                            <p className="form-hint">We use this for your first Gap Analysis report.</p>
+                        </div>
+
+                        <button
+                            className="btn btn-primary btn-full btn-lg"
+                            onClick={() => setStep(3)}
+                            disabled={!orgName}
+                        >
+                            Next Step <ArrowRight size={18} />
+                        </button>
+                    </div>
+                )}
+                {/* Step 2: Staff View (Skip org details) */}
+                {step === 2 && role === 'staff' && (
+                    <div className="animate-enter">
+                        <h1 style={{ textAlign: 'center', marginBottom: '1rem' }}>Staff Profile Setup 👤</h1>
+                        <p style={{ textAlign: 'center', color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
+                            You're joining as a staff member. We'll set up your training dashboard.
+                        </p>
+
+                        <div style={{ padding: '2rem', background: '#f8fafc', borderRadius: '12px', textAlign: 'center', marginBottom: '2rem' }}>
+                            <CheckCircle size={48} color="var(--color-success)" style={{ marginBottom: '1rem' }} />
+                            <h3 style={{ marginBottom: '0.5rem' }}>Training Portal Ready</h3>
+                            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>
+                                We've prepared your personalized training modules.
+                            </p>
+                        </div>
+
+                        <button className="btn btn-primary btn-full btn-lg" onClick={handleComplete} disabled={loading}>
+                            {loading ? 'Setting up...' : 'Go to Dashboard'} <ArrowRight size={18} />
+                        </button>
+                    </div>
+                )}
+
+                {/* Step 3: Services (Manager Only) */}
+                {step === 3 && role === 'manager' && (
+                    <div className="animate-enter">
+                        <h1 style={{ textAlign: 'center', marginBottom: '1rem' }}>Select Services Supported 🏥</h1>
+                        <p style={{ textAlign: 'center', color: 'var(--color-text-secondary)', marginBottom: '2.5rem' }}>
+                            Select the regulated activities you provide.
+                        </p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2.5rem' }}>
                             {[
-                                { id: 'domiciliary', label: 'Domiciliary Care' },
-                                { id: 'supported', label: 'Supported Living' },
-                                { id: 'carehome', label: 'Care Home (Residential/Nursing)' }
-                            ].map(opt => (
+                                'Residential Care',
+                                'Nursing Care',
+                                'Dementia Care',
+                                'Learning Disabilities',
+                                'Mental Health',
+                                'Domiciliary Care'
+                            ].map(service => (
                                 <div
-                                    key={opt.id}
-                                    className={`radio-option ${formData.serviceType === opt.id ? 'selected' : ''}`}
-                                    onClick={() => setFormData({ ...formData, serviceType: opt.id })}
+                                    key={service}
+                                    onClick={() => toggleService(service)}
+                                    style={{
+                                        padding: '1rem',
+                                        borderRadius: '8px',
+                                        border: `1px solid ${services.includes(service) ? 'var(--color-primary)' : '#e2e8f0'}`,
+                                        background: services.includes(service) ? 'var(--color-primary-light)' : 'white',
+                                        cursor: 'pointer',
+                                        textAlign: 'center',
+                                        fontSize: '0.9rem',
+                                        fontWeight: 500,
+                                        color: services.includes(service) ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                        transition: 'all 0.2s'
+                                    }}
                                 >
-                                    <div className="radio-circle"></div>
-                                    <span>{opt.label}</span>
+                                    {service}
                                 </div>
                             ))}
                         </div>
-                    </div>
 
-                    {/* CQC Status */}
-                    <div className="form-group">
-                        <label className="form-label">CQC Registered?</label>
-                        <div className="flex gap-2">
-                            {[
-                                { id: 'active', label: 'Yes – Active' },
-                                { id: 'applying', label: 'Applying' },
-                                { id: 'notyet', label: 'Not yet' }
-                            ].map(opt => (
-                                <button
-                                    type="button"
-                                    key={opt.id}
-                                    className={`btn ${formData.cqcStatus === opt.id ? 'btn-primary' : 'btn-secondary'}`}
-                                    style={{ flex: 1 }}
-                                    onClick={() => setFormData({ ...formData, cqcStatus: opt.id })}
-                                >
-                                    {formData.cqcStatus === opt.id && <Check size={14} />} {opt.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Sponsor Status */}
-                    <div className="form-group">
-                        <label className="form-label">Home Office Sponsor?</label>
-                        <div className="flex gap-2">
-                            {[{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }].map(opt => (
-                                <button
-                                    type="button"
-                                    key={opt.id}
-                                    className={`btn ${formData.sponsorStatus === opt.id ? 'btn-primary' : 'btn-secondary'}`}
-                                    style={{ flex: 1 }}
-                                    onClick={() => setFormData({ ...formData, sponsorStatus: opt.id })}
-                                >
-                                    {opt.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Counts */}
-                    <div className="flex gap-4">
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label className="form-label">Staff Count</label>
-                            <input
-                                type="number"
-                                className="form-input"
-                                placeholder="e.g. 12"
-                                value={formData.staffCount}
-                                onChange={e => setFormData({ ...formData, staffCount: e.target.value })}
-                            />
-                        </div>
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label className="form-label">Service Users</label>
+                        <div className="form-group" style={{ marginTop: '1.5rem', marginBottom: '2rem' }}>
+                            <label className="form-label">Approximate Number of Staff</label>
                             <input
                                 type="number"
                                 className="form-input"
                                 placeholder="e.g. 25"
-                                value={formData.serviceUsers}
-                                onChange={e => setFormData({ ...formData, serviceUsers: e.target.value })}
+                                value={staffCount}
+                                onChange={e => setStaffCount(e.target.value)}
                             />
                         </div>
-                    </div>
 
-                    {/* Manager Qual */}
-                    <div className="form-group">
-                        <label className="form-label">Registered Manager Qualification</label>
-                        <select
-                            className="form-select"
-                            value={formData.managerQual}
-                            onChange={e => setFormData({ ...formData, managerQual: e.target.value })}
-                        >
-                            <option value="level5">Level 5 Diploma</option>
-                            <option value="other">Other</option>
-                            <option value="progress">In Progress</option>
-                        </select>
-                    </div>
-
-                    <div className="mt-4">
-                        <button type="submit" className="btn btn-primary btn-full" style={{ padding: '0.75rem' }}>
-                            Save & Go to Dashboard <ArrowRight size={16} />
+                        <button className="btn btn-primary btn-full btn-lg" onClick={handleComplete} disabled={loading}>
+                            {loading ? 'Finalizing Setup...' : 'Complete Setup'} <CheckCircle size={18} />
                         </button>
                     </div>
-                </form>
+                )}
             </div>
         </div>
     );

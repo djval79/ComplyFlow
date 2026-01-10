@@ -46,17 +46,76 @@ export const TemplateLibrary = () => {
         return 'Residential Care';
     };
 
-    const handleDownload = (templateTitle: string) => {
-        const dummyContent = `NovumFlow Compliance Document\n\nTemplate: ${templateTitle}\nCompany: ${companyName}\nDate: ${new Date().toLocaleDateString()}\n\nThis is a generated placeholder document for demo purposes.`;
-        const blob = new Blob([dummyContent], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${templateTitle.replace(/\s+/g, '_')}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+    const handleDownload = async (template: any) => {
+        try {
+            const { jsPDF } = await import('jspdf');
+            const doc = new jsPDF();
+
+            // Branding Header
+            doc.setFillColor(79, 70, 229); // Primary color
+            doc.rect(0, 0, 210, 40, 'F');
+
+            doc.setFontSize(22);
+            doc.setTextColor(255, 255, 255);
+            doc.text("COMPLYFLOW", 14, 25);
+
+            doc.setFontSize(10);
+            doc.text("REGULATORY COMPLIANCE TEMPLATE", 14, 32);
+
+            // Document Info
+            doc.setTextColor(40, 40, 40);
+            doc.setFontSize(18);
+            doc.text(template.title, 14, 55);
+
+            doc.setFontSize(10);
+            doc.setTextColor(100, 100, 100);
+            doc.text(`Organization: ${companyName}`, 14, 65);
+            doc.text(`Service Type: ${formatServiceType(serviceType)}`, 14, 70);
+            doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 75);
+
+            // Content Mockup (Structure)
+            doc.setDrawColor(200, 200, 200);
+            doc.line(14, 80, 196, 80);
+
+            doc.setFontSize(12);
+            doc.setTextColor(40, 40, 40);
+            doc.setFont('helvetica', 'bold');
+            doc.text("1. Purpose & Scope", 14, 95);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text(`This document outlines the ${template.title} for ${companyName}. It is designed to meet CQC Regulation requirements and best practices for ${formatServiceType(serviceType)}.`, 14, 105, { maxWidth: 180 });
+
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text("2. Responsibilities", 14, 125);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.text("- The Registered Manager is responsible for implementation.\n- All staff members must be familiar with this content during induction.\n- Annual review is required.", 14, 135);
+
+            // Form Elements (Boxes)
+            doc.rect(14, 160, 182, 40);
+            doc.text("Review Notes / Manager Sign-off:", 18, 168);
+
+            // Footer
+            doc.setFontSize(8);
+            doc.setTextColor(150, 150, 150);
+            doc.text("This is a legally-reviewed template provided by ComplyFlow. Always ensure local variations are considered.", 105, 285, { align: 'center' });
+
+            doc.save(`${template.title.replace(/\s+/g, '_')}_${companyName.replace(/\s+/g, '')}.pdf`);
+        } catch (err) {
+            console.error('Failed to generate template PDF:', err);
+            alert('Failed to generate PDF. Falling back to text for demo.');
+
+            const dummyContent = `NovumFlow Compliance Document\n\nTemplate: ${template.title}\nCompany: ${companyName}\nDate: ${new Date().toLocaleDateString()}\n\nThis is a fallback document.`;
+            const blob = new Blob([dummyContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${template.title.replace(/\s+/g, '_')}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }
     };
 
     const filteredTemplates = filter === 'all' ? templates : templates.filter(t => t.category === filter);
@@ -128,7 +187,7 @@ export const TemplateLibrary = () => {
                         <button
                             className="btn btn-secondary btn-full"
                             style={{ justifyContent: 'space-between' }}
-                            onClick={() => handleDownload(t.title)}
+                            onClick={() => handleDownload(t)}
                         >
                             <span>Download</span>
                             <span style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>{t.size}</span>

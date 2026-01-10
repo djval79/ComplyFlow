@@ -133,12 +133,36 @@ export const Navigation = () => {
                                             Gap Analysis
                                         </NavLink>
                                         <NavLink
+                                            to="/cqc/advisor"
+                                            className="nav-link"
+                                            style={{ display: 'block', marginBottom: '0.25rem' }}
+                                            onClick={() => setCqcDropdownOpen(false)}
+                                        >
+                                            AI Advisor
+                                        </NavLink>
+                                        <NavLink
+                                            to="/cqc/mock-inspection"
+                                            className="nav-link"
+                                            style={{ display: 'block', marginBottom: '0.25rem' }}
+                                            onClick={() => setCqcDropdownOpen(false)}
+                                        >
+                                            🎯 Mock Inspection Centre
+                                        </NavLink>
+                                        <NavLink
+                                            to="/cqc/interview-training"
+                                            className="nav-link"
+                                            style={{ display: 'block', marginBottom: '0.25rem' }}
+                                            onClick={() => setCqcDropdownOpen(false)}
+                                        >
+                                            📚 Interview Training
+                                        </NavLink>
+                                        <NavLink
                                             to="/cqc/simulator"
                                             className="nav-link"
                                             style={{ display: 'block', marginBottom: '0.25rem' }}
                                             onClick={() => setCqcDropdownOpen(false)}
                                         >
-                                            Inspection Simulator
+                                            Quick Chat Simulator
                                         </NavLink>
                                         <NavLink
                                             to="/cqc/visiting-rights"

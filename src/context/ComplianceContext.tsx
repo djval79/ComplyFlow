@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 
 export interface Location {
     id: string;
@@ -17,57 +19,133 @@ interface ComplianceState {
     // Multi-site support
     locations: Location[];
     currentLocationId: string;
+    loading: boolean;
 }
 
 interface ComplianceContextType extends ComplianceState {
-    updateCompliance: (data: Partial<ComplianceState>) => void;
-    completeOnboarding: (data: Partial<ComplianceState>) => void;
+    updateCompliance: (data: Partial<ComplianceState>) => Promise<void>;
+    completeOnboarding: (data: Partial<ComplianceState>) => Promise<void>;
     switchLocation: (id: string) => void;
     getCurrentLocation: () => Location | undefined;
 }
 
 const defaultState: ComplianceState = {
-    companyName: 'Demo Organization',
+    companyName: '',
     serviceType: 'domiciliary',
     staffCount: 0,
     serviceUsers: 0,
     cqcStatus: 'applying',
     sponsorStatus: 'pending',
     onboardingComplete: false,
-    locations: [
-        { id: 'loc_hq', name: 'Liverpool HQ', type: 'Head Office' },
-        { id: 'loc_north', name: 'Manchester Branch', type: 'Branch' },
-        { id: 'loc_south', name: 'London Office', type: 'Branch' }
-    ],
-    currentLocationId: 'loc_hq',
+    locations: [],
+    currentLocationId: '',
+    loading: true
 };
 
 const ComplianceContext = createContext<ComplianceContextType | undefined>(undefined);
 
 export const ComplianceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [state, setState] = useState<ComplianceState>(() => {
-        const saved = localStorage.getItem('complyflow_state');
-        if (saved) {
-            const parsed = JSON.parse(saved);
-            // Migration: Ensure new fields exist if loading old state
-            if (!parsed.locations) {
-                return { ...parsed, locations: defaultState.locations, currentLocationId: defaultState.currentLocationId };
-            }
-            return parsed;
-        }
-        return defaultState;
-    });
+    const { user, profile, isDemo } = useAuth();
+    const [state, setState] = useState<ComplianceState>(defaultState);
 
+    // Initial Fetch
     useEffect(() => {
-        localStorage.setItem('complyflow_state', JSON.stringify(state));
-    }, [state]);
+        if (isDemo) {
+            // Demo Mode: Mock Data
+            setState({
+                ...defaultState,
+                companyName: 'Demo Organization',
+                locations: [
+                    { id: '1', name: 'Liverpool HQ', type: 'Head Office' },
+                    { id: '2', name: 'Manchester Branch', type: 'Branch' }
+                ],
+                currentLocationId: '1',
+                onboardingComplete: true,
+                loading: false
+            });
+            return;
+        }
 
-    const updateCompliance = (data: Partial<ComplianceState>) => {
+        if (!user || !profile?.organization_id) {
+            setState(prev => ({ ...prev, loading: false }));
+            return;
+        }
+
+        const fetchData = async () => {
+            try {
+                // 1. Fetch Metrics
+                const { data: metrics } = await supabase
+                    .from('compliance_metrics')
+                    .select('*')
+                    .eq('organization_id', profile.organization_id)
+                    .single();
+
+                // 2. Fetch Locations
+                const { data: locations } = await supabase
+                    .from('locations')
+                    .select('*')
+                    .eq('organization_id', profile.organization_id);
+
+                // 3. Update State
+                if (metrics) {
+                    setState(prev => ({
+                        ...prev,
+                        companyName: profile.organization_name || '',
+                        staffCount: metrics.staff_count,
+                        serviceUsers: metrics.service_users_count,
+                        serviceType: metrics.service_type || 'domiciliary',
+                        cqcStatus: metrics.cqc_status as any,
+                        sponsorStatus: metrics.sponsor_status as any,
+                        onboardingComplete: metrics.onboarding_complete,
+                        locations: locations || [],
+                        currentLocationId: locations?.[0]?.id || '',
+                        loading: false
+                    }));
+                } else {
+                    // Fallback if no metrics found (should be created by trigger, but just in case)
+                    setState(prev => ({ ...prev, loading: false }));
+                }
+
+            } catch (error) {
+                console.error("Error fetching compliance data:", error);
+                setState(prev => ({ ...prev, loading: false }));
+            }
+        };
+
+        fetchData();
+    }, [user, profile, isDemo]);
+
+    const updateCompliance = async (data: Partial<ComplianceState>) => {
+        // Optimistic Update
         setState(prev => ({ ...prev, ...data }));
+
+        if (isDemo) return;
+
+        if (profile?.organization_id) {
+            try {
+                // Map frontend state to DB columns
+                const updates: any = {};
+                if (data.staffCount !== undefined) updates.staff_count = data.staffCount;
+                if (data.serviceUsers !== undefined) updates.service_users_count = data.serviceUsers;
+                if (data.cqcStatus !== undefined) updates.cqc_status = data.cqcStatus;
+                if (data.sponsorStatus !== undefined) updates.sponsor_status = data.sponsorStatus;
+                if (data.serviceType !== undefined) updates.service_type = data.serviceType;
+                if (data.onboardingComplete !== undefined) updates.onboarding_complete = data.onboardingComplete;
+
+                if (Object.keys(updates).length > 0) {
+                    await supabase
+                        .from('compliance_metrics')
+                        .update(updates)
+                        .eq('organization_id', profile.organization_id);
+                }
+            } catch (error) {
+                console.error("Error saving compliance data:", error);
+            }
+        }
     };
 
-    const completeOnboarding = (data: Partial<ComplianceState>) => {
-        setState(prev => ({ ...prev, ...data, onboardingComplete: true }));
+    const completeOnboarding = async (data: Partial<ComplianceState>) => {
+        await updateCompliance({ ...data, onboardingComplete: true });
     };
 
     const switchLocation = (id: string) => {

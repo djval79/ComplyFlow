@@ -27,3 +27,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Custom Ignores
+supabase/.temp/
+playwright-report/
+test-results/
+

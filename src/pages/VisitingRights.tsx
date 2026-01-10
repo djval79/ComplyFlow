@@ -1,10 +1,14 @@
-import React, { useState } from 'react';
-import { CheckCircle, AlertTriangle, FileText, ArrowRight, HeartHandshake } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle, AlertTriangle, FileText, ArrowRight, HeartHandshake, Loader2, Save } from 'lucide-react';
 import { useCompliance } from '../context/ComplianceContext';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export const VisitingRights = () => {
     const { companyName } = useCompliance();
+    const { profile } = useAuth();
     const [auditScore, setAuditScore] = useState<number | null>(null);
+    const [saving, setSaving] = useState(false);
 
     const [checklist, setChecklist] = useState([
         { id: 1, text: "Do you have a written policy explicitly supporting 'unrestricted visiting' by default?", checked: false },
@@ -23,6 +27,42 @@ export const VisitingRights = () => {
         setAuditScore(Math.round((checkedCount / updated.length) * 100));
     };
 
+    const handleSaveAudit = async () => {
+        if (!profile?.organization_id || auditScore === null) return;
+        setSaving(true);
+        try {
+            // Save to compliance_alerts if failed, or a general log (using training_completions as a generic record for now or metrics)
+            // Let's use training_completions but with a different module id
+            await supabase.from('training_completions').insert({
+                organization_id: profile.organization_id,
+                user_id: profile.id,
+                module_id: 'reg9a_audit_' + new Date().toISOString().split('T')[0],
+                module_name: 'Regulation 9A Self-Assessment',
+                score: auditScore,
+                passed: auditScore === 100
+            });
+
+            // If score is low, create a compliance alert
+            if (auditScore < 100) {
+                await supabase.from('compliance_alerts').insert({
+                    organization_id: profile.organization_id,
+                    alert_type: 'policy_review',
+                    severity: auditScore < 50 ? 'critical' : 'warning',
+                    title: 'Visiting Rights Audit Gap',
+                    description: `Organization scored ${auditScore}% on Reg 9A assessment. Action required to meet fundamental standards.`,
+                    is_resolved: false
+                });
+            }
+
+            alert('Audit results securely saved to governance log.');
+        } catch (e) {
+            console.error(e);
+            alert('Failed to save audit.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const getStatusParams = () => {
         if (auditScore === null) return { color: 'var(--color-text-secondary)', text: 'Pending Audit', bg: '#f1f5f9' };
         if (auditScore === 100) return { color: 'var(--color-success)', text: 'Compliant', bg: 'var(--color-success-bg)' };
@@ -33,7 +73,7 @@ export const VisitingRights = () => {
     const status = getStatusParams();
 
     return (
-        <div className="container animate-enter" style={{ padding: '2rem 1rem' }}>
+        <div className="container animate-enter" style={{ padding: '2rem 1rem', maxWidth: '1000px' }}>
 
             {/* Header */}
             <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
@@ -61,15 +101,28 @@ export const VisitingRights = () => {
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '2rem' }}>
 
                 {/* Checklist Section */}
                 <div className="card">
-                    <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <CheckCircle size={20} /> Self-Assessment
-                    </h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                        <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <CheckCircle size={20} /> Self-Assessment
+                        </h3>
+                        {auditScore !== null && (
+                            <button
+                                className="btn btn-primary"
+                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                                onClick={handleSaveAudit}
+                                disabled={saving}
+                            >
+                                {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
+                                {saving ? ' Saving...' : ' Save Audit'}
+                            </button>
+                        )}
+                    </div>
 
-                    <div className="flex flex-col gap-3">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                         {checklist.map(item => (
                             <label key={item.id} style={{
                                 display: 'flex',
@@ -107,7 +160,7 @@ export const VisitingRights = () => {
                 </div>
 
                 {/* Resources & Tools */}
-                <div className="flex flex-col gap-4">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 
                     {/* Policy Generator Card */}
                     <div className="card" style={{ background: 'linear-gradient(135deg, white 0%, #f0f9ff 100%)' }}>
@@ -136,9 +189,6 @@ export const VisitingRights = () => {
                         >
                             Generate Policy <ArrowRight size={16} />
                         </button>
-                        <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--color-text-tertiary)', textAlign: 'center' }}>
-                            Updated for April 2024 Legislation
-                        </div>
                     </div>
 
                     {/* Quick Guidance Info */}
@@ -146,10 +196,7 @@ export const VisitingRights = () => {
                         <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Key Requirements</h3>
                         <ul style={{ paddingLeft: '1.25rem', fontSize: '0.9rem', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                             <li>
-                                <strong>No Blanket Bans:</strong> You cannot apply a "closed door" policy to the whole home unless specifically advised by Health Protection Teams during a major outbreak.
-                            </li>
-                            <li>
-                                <strong>Out of Care Home Visits:</strong> Residents must be facilitated to go out (e.g., to vote, work, or education) without unnecessary isolation upon return.
+                                <strong>No Blanket Bans:</strong> You cannot apply a "closed door" policy to the whole home unless specifically advised by Health Protection Teams.
                             </li>
                             <li>
                                 <strong>Essential Care Givers:</strong> Every resident is entitled to one, who can visit even during outbreaks.
