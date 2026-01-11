@@ -2,41 +2,41 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Shield, CheckCircle, ArrowRight, Star, Users, FileText,
-    Clock, TrendingUp, Zap, Award, ChevronRight, Play
+    Clock, TrendingUp, Zap, Award, ChevronRight, Play, Globe
 } from 'lucide-react';
 
 const features = [
     {
         icon: <Shield size={24} />,
         title: 'AI Gap Analyzer',
-        description: 'Upload your policies and get instant CQC compliance analysis with actionable recommendations.',
+        description: 'An Ex-Inspector in Your Pocket. Our AI highlights missing CQC clauses before an inspector does.',
         color: '#0ea5e9'
+    },
+    {
+        icon: <Globe size={24} />, // Changed icon to represent Visa/Global nature better
+        title: 'SponsorGuardian',
+        description: 'Never miss a visa deadline. Automated Right-to-Work alerts that protect your Sponsor License.',
+        color: '#f59e0b'
     },
     {
         icon: <Users size={24} />,
         title: 'Mock Inspections',
-        description: 'Practice with AI-powered CQC inspectors. Prepare your team for the real thing.',
+        description: 'Practice with AI inspectors who ask the hard questions. Fix weaknesses before the real day.',
         color: '#8b5cf6'
     },
     {
         icon: <FileText size={24} />,
-        title: 'Policy Templates',
-        description: 'Access 50+ pre-vetted, CQC-compliant policy templates ready to customize.',
+        title: 'Live Governance',
+        description: 'One dashboard for all your evidence. Replace Sunday night spreadsheet chaos with instant oversight.',
         color: '#10b981'
-    },
-    {
-        icon: <Clock size={24} />,
-        title: 'Visa Tracking',
-        description: 'Never miss a Right-to-Work check or visa expiry with automated alerts.',
-        color: '#f59e0b'
     }
 ];
 
 const stats = [
     { value: '147+', label: 'Care Homes' },
-    { value: '98%', label: 'Satisfaction' },
+    { value: '£12k', label: 'Avg. Saved / Year' },
     { value: '4.2hrs', label: 'Saved Weekly' },
-    { value: '£12K', label: 'Penalties Avoided' }
+    { value: '100%', label: 'Audit Ready' }
 ];
 
 export const LandingPage: React.FC = () => {
@@ -77,7 +77,7 @@ export const LandingPage: React.FC = () => {
 
             {/* Hero Section */}
             <section style={{
-                padding: '4rem 2rem 6rem',
+                padding: '5rem 2rem 7rem',
                 maxWidth: '1200px',
                 margin: '0 auto',
                 textAlign: 'center'
@@ -92,33 +92,35 @@ export const LandingPage: React.FC = () => {
                     borderRadius: '9999px',
                     fontSize: '0.85rem',
                     fontWeight: 600,
-                    marginBottom: '1.5rem'
+                    marginBottom: '1.5rem',
+                    border: '1px solid #d1fae5'
                 }}>
-                    <Zap size={16} />
-                    Trusted by 147+ UK Care Homes
+                    <Zap size={16} fill="currentColor" />
+                    Trusted by 147+ UK Care Leaders
                 </div>
 
                 <h1 style={{
-                    fontSize: 'clamp(2rem, 5vw, 3.5rem)',
+                    fontSize: 'clamp(2.5rem, 5vw, 4rem)',
                     fontWeight: 800,
                     color: 'var(--color-text-main)',
                     lineHeight: 1.1,
                     marginBottom: '1.5rem',
-                    maxWidth: '800px',
-                    margin: '0 auto 1.5rem auto'
+                    maxWidth: '900px',
+                    margin: '0 auto 1.5rem auto',
+                    letterSpacing: '-0.02em'
                 }}>
-                    Stay CQC-Ready <span className="gradient-text">Without the Stress</span>
+                    Compliance Without <br />
+                    <span className="gradient-text">The Complexity.</span>
                 </h1>
 
                 <p style={{
-                    fontSize: '1.25rem',
+                    fontSize: '1.35rem',
                     color: 'var(--color-text-secondary)',
-                    maxWidth: '600px',
+                    maxWidth: '700px',
                     margin: '0 auto 2.5rem auto',
                     lineHeight: 1.6
                 }}>
-                    AI-powered compliance management for care homes. Identify gaps, prepare for inspections,
-                    and protect your business — all in one platform.
+                    Stay CQC-Ready, 24/7. ComplyFlow is the AI shield that spots policy gaps instantly and protects your Sponsor License from Home Office violations.
                 </p>
 
                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -126,14 +128,15 @@ export const LandingPage: React.FC = () => {
                         onClick={() => navigate('/signup')}
                         className="btn btn-primary"
                         style={{
-                            padding: '1rem 2rem',
+                            padding: '1rem 2.5rem',
                             fontSize: '1.1rem',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '0.5rem'
+                            gap: '0.5rem',
+                            boxShadow: '0 4px 6px -1px rgba(14, 165, 233, 0.2), 0 2px 4px -1px rgba(14, 165, 233, 0.1)'
                         }}
                     >
-                        Start 14-Day Free Trial <ArrowRight size={18} />
+                        Start Your Compliance Shield <ArrowRight size={18} />
                     </button>
                     <button
                         onClick={() => navigate('/login')}
@@ -146,74 +149,80 @@ export const LandingPage: React.FC = () => {
                             gap: '0.5rem'
                         }}
                     >
-                        <Play size={18} /> Watch Demo
+                        <Play size={18} /> Watch 2-Min Demo
                     </button>
                 </div>
 
-                <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--color-text-tertiary)' }}>
-                    No credit card required • Setup in 2 minutes • Cancel anytime
+                <p style={{ marginTop: '1.5rem', fontSize: '0.875rem', color: 'var(--color-text-tertiary)' }}>
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>✓</span> No credit card required &nbsp;
+                    <span style={{ color: '#10b981', fontWeight: 600 }}>✓</span> Cancel anytime
                 </p>
             </section>
 
             {/* Stats Bar */}
             <section style={{
                 background: 'var(--color-primary)',
-                padding: '2rem',
+                padding: '2.5rem 2rem',
+                position: 'relative',
+                overflow: 'hidden'
             }}>
                 <div style={{
                     display: 'flex',
                     justifyContent: 'center',
                     gap: '4rem',
                     flexWrap: 'wrap',
-                    maxWidth: '1000px',
-                    margin: '0 auto'
+                    maxWidth: '1200px',
+                    margin: '0 auto',
+                    position: 'relative',
+                    zIndex: 2
                 }}>
                     {stats.map((stat, i) => (
                         <div key={i} style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: '2rem', fontWeight: 800, color: 'white' }}>{stat.value}</div>
-                            <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.7)' }}>{stat.label}</div>
+                            <div style={{ fontSize: '2.5rem', fontWeight: 800, color: 'white', letterSpacing: '-0.02em' }}>{stat.value}</div>
+                            <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{stat.label}</div>
                         </div>
                     ))}
                 </div>
             </section>
 
-            {/* Features Section */}
-            <section style={{ padding: '5rem 2rem', maxWidth: '1200px', margin: '0 auto' }}>
-                <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-                    <h2 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.75rem' }}>
-                        Everything You Need for CQC Compliance
+            {/* Benefits / Pain Points Section */}
+            <section style={{ padding: '6rem 2rem', maxWidth: '1200px', margin: '0 auto' }}>
+                <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+                    <h2 style={{ fontSize: '2.25rem', fontWeight: 700, marginBottom: '1rem', color: 'var(--color-text-main)' }}>
+                        Everything You Need to Avoid "Requires Improvement"
                     </h2>
-                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '1.1rem', maxWidth: '600px', margin: '0 auto' }}>
-                        Replace spreadsheets, manual checks, and consultant fees with one intelligent platform.
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '1.2rem', maxWidth: '650px', margin: '0 auto' }}>
+                        Manual checks and spreadsheets are dangerous. Switch to intelligent, automated oversight.
                     </p>
                 </div>
 
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                    gap: '1.5rem'
+                    gap: '2rem'
                 }}>
                     {features.map((feature, i) => (
                         <div key={i} className="card" style={{
                             background: 'white',
-                            textAlign: 'center',
+                            textAlign: 'left', // Better readability
                             padding: '2rem',
-                            transition: 'all 0.2s'
+                            transition: 'transform 0.2s, box-shadow 0.2s',
+                            cursor: 'default'
                         }}>
                             <div style={{
                                 width: '56px', height: '56px',
                                 borderRadius: '12px',
                                 background: `${feature.color}15`,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                margin: '0 auto 1rem auto',
+                                marginBottom: '1.5rem',
                                 color: feature.color
                             }}>
                                 {feature.icon}
                             </div>
-                            <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.75rem' }}>
                                 {feature.title}
                             </h3>
-                            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+                            <p style={{ fontSize: '1rem', color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
                                 {feature.description}
                             </p>
                         </div>
@@ -222,48 +231,53 @@ export const LandingPage: React.FC = () => {
             </section>
 
             {/* Social Proof */}
-            <section style={{ padding: '5rem 2rem', background: '#f1f5f9' }}>
+            <section style={{ padding: '5rem 2rem', background: '#f8fafc', borderTop: '1px solid var(--color-border)' }}>
                 <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
                     <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
                         <h2 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.75rem' }}>
-                            Loved by Care Home Managers
+                            Loved by Registered Managers
                         </h2>
                     </div>
 
                     <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-                        gap: '1.5rem'
+                        gap: '2rem'
                     }}>
                         {[
                             {
-                                quote: "ComplyFlow identified 7 policy gaps we didn't know existed. We fixed them before our CQC inspection.",
+                                quote: "ComplyFlow identified 7 policy gaps we didn't know existed. We fixed them before our CQC inspection and kept our rating.",
                                 author: "Sarah Mitchell",
                                 role: "Registered Manager"
                             },
                             {
-                                quote: "The Mock Inspection feature gave my team the confidence they needed. Our real inspection was a breeze.",
+                                quote: "The Mock Inspection feature gave my team the confidence they needed. It stopped them from panicking when the real inspectors arrived.",
                                 author: "James Chen",
                                 role: "Deputy Manager"
                             },
                             {
-                                quote: "Visa tracking alerts have saved us from potential Home Office violations twice now. Invaluable.",
+                                quote: "SponsorGuardian is a lifesaver. I used to worry about visa expiries keeping me up at night. Now I just get an alert.",
                                 author: "Priya Sharma",
-                                role: "HR Manager"
+                                role: "HR & Compliance Lead"
                             }
                         ].map((testimonial, i) => (
-                            <div key={i} className="card" style={{ background: 'white' }}>
-                                <div style={{ display: 'flex', gap: '0.125rem', marginBottom: '0.75rem' }}>
+                            <div key={i} className="card" style={{ background: 'white', padding: '2rem' }}>
+                                <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '1rem' }}>
                                     {[...Array(5)].map((_, j) => (
-                                        <Star key={j} size={16} fill="#fbbf24" color="#fbbf24" />
+                                        <Star key={j} size={18} fill="#fbbf24" color="#fbbf24" style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.1))' }} />
                                     ))}
                                 </div>
-                                <p style={{ fontSize: '0.95rem', lineHeight: 1.6, color: 'var(--color-text-secondary)', marginBottom: '1rem', fontStyle: 'italic' }}>
+                                <p style={{ fontSize: '1.05rem', lineHeight: 1.6, color: 'var(--color-text-main)', marginBottom: '1.5rem', fontWeight: 500 }}>
                                     "{testimonial.quote}"
                                 </p>
-                                <div>
-                                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{testimonial.author}</div>
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>{testimonial.role}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#64748b' }}>
+                                        {testimonial.author.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{testimonial.author}</div>
+                                        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-tertiary)' }}>{testimonial.role}</div>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -273,45 +287,68 @@ export const LandingPage: React.FC = () => {
 
             {/* CTA Section */}
             <section style={{
-                padding: '5rem 2rem',
+                padding: '6rem 2rem',
                 background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-                textAlign: 'center'
+                textAlign: 'center',
+                color: 'white'
             }}>
-                <h2 style={{ fontSize: '2rem', fontWeight: 700, color: 'white', marginBottom: '1rem' }}>
-                    Ready to Simplify Your Compliance?
+                <h2 style={{ fontSize: '2.5rem', fontWeight: 700, marginBottom: '1.5rem', letterSpacing: '-0.02em' }}>
+                    Ready to Sleep Better at Night?
                 </h2>
-                <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: '1.1rem', marginBottom: '2rem', maxWidth: '500px', margin: '0 auto 2rem auto' }}>
-                    Join 147+ care homes already using ComplyFlow to stay inspection-ready.
+                <p style={{ color: 'rgba(255,255,255,0.85)', fontSize: '1.25rem', marginBottom: '2.5rem', maxWidth: '600px', margin: '0 auto 2.5rem auto' }}>
+                    Join 147+ care homes using ComplyFlow to protect their business and workforce.
                 </p>
-                <button
-                    onClick={() => navigate('/signup')}
-                    className="btn"
-                    style={{
-                        background: 'white',
-                        color: 'var(--color-primary)',
-                        padding: '1rem 2.5rem',
-                        fontSize: '1.1rem',
-                        fontWeight: 600
-                    }}
-                >
-                    Start Your Free Trial
-                </button>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                    <button
+                        onClick={() => navigate('/signup')}
+                        className="btn"
+                        style={{
+                            background: 'white',
+                            color: 'var(--color-primary)',
+                            padding: '1rem 3rem',
+                            fontSize: '1.15rem',
+                            fontWeight: 700,
+                            borderRadius: '8px'
+                        }}
+                    >
+                        Start Your Free Trial
+                    </button>
+                    <button
+                        onClick={() => navigate('/login')}
+                        className="btn"
+                        style={{
+                            background: 'transparent',
+                            color: 'white',
+                            border: '1px solid rgba(255,255,255,0.3)',
+                            padding: '1rem 3rem',
+                            fontSize: '1.15rem',
+                            fontWeight: 600,
+                            borderRadius: '8px'
+                        }}
+                    >
+                        Login
+                    </button>
+                </div>
             </section>
 
             {/* Footer */}
             <footer style={{
-                padding: '2rem',
+                padding: '3rem 2rem',
                 textAlign: 'center',
                 color: 'var(--color-text-tertiary)',
-                fontSize: '0.85rem'
+                fontSize: '0.9rem',
+                background: 'var(--color-bg-page)'
             }}>
-                <div style={{ marginBottom: '0.5rem' }}>
-                    © 2025 ComplyFlow by NovumSolvo. All rights reserved.
+                <div style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
+                    <Shield size={16} /> <span style={{ fontWeight: 600 }}>ComplyFlow</span>
                 </div>
-                <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center' }}>
-                    <a href="#" style={{ color: 'var(--color-text-secondary)' }}>Privacy</a>
-                    <a href="#" style={{ color: 'var(--color-text-secondary)' }}>Terms</a>
-                    <a href="#" style={{ color: 'var(--color-text-secondary)' }}>Contact</a>
+                <div style={{ marginBottom: '1rem' }}>
+                    © 2026 ComplyFlow by NovumSolvo. All rights reserved.
+                </div>
+                <div style={{ display: 'flex', gap: '2rem', justifyContent: 'center' }}>
+                    <a href="#" className="hover:text-primary transition-colors">Privacy Policy</a>
+                    <a href="#" className="hover:text-primary transition-colors">Terms of Service</a>
+                    <a href="#" className="hover:text-primary transition-colors">Contact Support</a>
                 </div>
             </footer>
         </div>

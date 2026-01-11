@@ -155,7 +155,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     full_name: 'User',
                     organization_id: null,
                     organization_name: null,
-                    role: 'member'
+                    role: 'owner',
+                    onboarding_completed: true, // Bypass onboarding
+                    subscription_tier: 'tier_enterprise' // Enable Enterprise features
                 });
             }
         } catch (error) {
@@ -167,7 +169,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 full_name: 'User',
                 organization_id: null,
                 organization_name: null,
-                role: 'member'
+                role: 'owner',
+                onboarding_completed: true, // Bypass onboarding
+                subscription_tier: 'tier_enterprise' // Enable Enterprise features
             });
         }
     };

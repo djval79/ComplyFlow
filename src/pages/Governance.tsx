@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, AlertTriangle, CheckCircle, Clock, Download, ChevronRight, Activity, Shield, ClipboardList, TrendingUp, Award } from 'lucide-react';
+import { BarChart3, AlertTriangle, CheckCircle, Clock, Download, ChevronRight, Activity, Shield, ClipboardList, TrendingUp, Award, Plus, X } from 'lucide-react';
 import { useCompliance } from '../context/ComplianceContext';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export const GovernanceDashboard = () => {
     const navigate = useNavigate();
@@ -15,22 +16,18 @@ export const GovernanceDashboard = () => {
     const currentLocation = getCurrentLocation();
     const isHQ = !currentLocation || currentLocation.type === 'Head Office';
 
-    // State for CQC Data (Real)
+    // State for Real Data
     const [cqcData, setCqcData] = useState<any>(null);
     const [analyses, setAnalyses] = useState<any[]>([]);
     const [training, setTraining] = useState<any[]>([]);
+    const [risks, setRisks] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
-
-    // Hardcoded ID for MVP demonstration
-    const PROVIDER_ID = '1-1002345678';
 
     useEffect(() => {
         const fetchRealData = async () => {
             if (!profile?.organization_id) return;
             setLoading(true);
             try {
-                const { supabase } = await import('../lib/supabase');
-
                 // 1. Fetch CQC Live Ratings (HQ only)
                 if (isHQ) {
                     const { data, error } = await supabase.functions.invoke('source-layer', {
@@ -40,22 +37,28 @@ export const GovernanceDashboard = () => {
                 }
 
                 // 2. Fetch AI Analyses History
-                const { data: aData, error: aErr } = await supabase
+                const { data: aData } = await supabase
                     .from('compliance_analyses')
                     .select('id, overall_score, summary, created_at, results')
                     .eq('organization_id', profile.organization_id)
                     .order('created_at', { ascending: false });
-
-                if (!aErr && aData) setAnalyses(aData);
+                if (aData) setAnalyses(aData);
 
                 // 3. Fetch Training Completions
-                const { data: tData, error: tErr } = await supabase
+                const { data: tData } = await supabase
                     .from('training_completions')
                     .select('id, module_name, score, completed_at, profiles(full_name)')
                     .eq('organization_id', profile.organization_id)
                     .order('completed_at', { ascending: false });
+                if (tData) setTraining(tData);
 
-                if (!tErr && tData) setTraining(tData);
+                // 4. Fetch Risk Register
+                const { data: rData } = await supabase
+                    .from('risk_register')
+                    .select('*')
+                    .eq('organization_id', profile.organization_id)
+                    .order('created_at', { ascending: false });
+                if (rData) setRisks(rData);
 
             } catch (err) {
                 console.error("Failed to load governance data", err);
@@ -66,10 +69,10 @@ export const GovernanceDashboard = () => {
         fetchRealData();
     }, [isHQ, profile?.organization_id]);
 
-    // Branch Data Simulation (Mock)
+    // Branch Data Simulation (Mock - only used if no live data)
     const branchDomains = [
         { name: 'Safe', score: 'Good', trend: 'stable' },
-        { name: 'Effective', score: 'Requires Improvement', trend: 'down' }, // Different from HQ
+        { name: 'Effective', score: 'Requires Improvement', trend: 'down' },
         { name: 'Caring', score: 'Good', trend: 'stable' },
         { name: 'Responsive', score: 'Good', trend: 'up' },
         { name: 'Well-led', score: 'Good', trend: 'up' }
@@ -83,16 +86,42 @@ export const GovernanceDashboard = () => {
         { name: 'Well-led', score: 'Requires Improvement', trend: 'down' }
     ];
 
-    // Select Data Source based on Location
     const displayDomains = cqcData ? cqcData.domains : (isHQ ? hqDomains : branchDomains);
     const providerName = cqcData ? cqcData.provider_name : (currentLocation?.name || "MeCare Health Services (Demo)");
 
-    // Mock Risk Register
-    const risks = [
-        { id: 1, title: 'Staff Vacancy Rate', level: 'High', mitigation: 'Recruitment drive active' },
-        { id: 2, title: 'Medication Errors', level: 'Medium', mitigation: 'New eMAR system training' },
-        { id: 3, title: 'Building Maintenance', level: 'Low', mitigation: 'Contractor scheduled' }
-    ];
+    // Risk Register Logic
+    const [newRisk, setNewRisk] = useState({ title: '', level: 'Medium', mitigation: '' });
+    const [isAddingRisk, setIsAddingRisk] = useState(false);
+    const [savingRisk, setSavingRisk] = useState(false);
+
+    const handleAddRisk = async () => {
+        if (!newRisk.title || !profile?.organization_id) return;
+        setSavingRisk(true);
+        try {
+            const { data, error } = await supabase
+                .from('risk_register')
+                .insert({
+                    organization_id: profile.organization_id,
+                    title: newRisk.title,
+                    level: newRisk.level,
+                    mitigation: newRisk.mitigation,
+                    created_by: profile.id
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+            if (data) setRisks([data, ...risks]);
+
+            setNewRisk({ title: '', level: 'Medium', mitigation: '' });
+            setIsAddingRisk(false);
+        } catch (error) {
+            console.error('Error adding risk:', error);
+            alert('Failed to save risk.');
+        } finally {
+            setSavingRisk(false);
+        }
+    };
 
     const getRiskColor = (level: string) => {
         switch (level) {
@@ -111,7 +140,6 @@ export const GovernanceDashboard = () => {
                     </h1>
                     <p style={{ color: 'var(--color-text-secondary)' }}>
                         System oversight for <strong>{providerName}</strong>
-                        {/* Location Badge */}
                         <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
                             marginLeft: '0.75rem', padding: '0.1rem 0.5rem',
@@ -129,7 +157,6 @@ export const GovernanceDashboard = () => {
                     <button
                         className="btn btn-primary"
                         onClick={() => {
-                            // Generate and download a board report PDF
                             const reportContent = `Board Compliance Report\n\nProvider: ${providerName}\nGenerated: ${new Date().toLocaleDateString()}\n\nCQC Ratings:\n${displayDomains.map((d: any) => `${d.name}: ${d.score}`).join('\n')}\n\nRisk Register:\n${risks.map(r => `${r.title} - ${r.level}`).join('\n')}`;
                             const blob = new Blob([reportContent], { type: 'text/plain' });
                             const url = URL.createObjectURL(blob);
@@ -252,7 +279,9 @@ export const GovernanceDashboard = () => {
                         Top Risks (Risk Register)
                     </h3>
                     <div className="space-y-3">
-                        {risks.map((risk) => (
+                        {risks.length === 0 ? (
+                            <p className="text-center text-gray-500 py-4">No risks found.</p>
+                        ) : risks.slice(0, 5).map((risk) => (
                             <div key={risk.id} className="p-3 bg-surface rounded-md border border-border relative overflow-hidden">
                                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: getRiskColor(risk.level) }}></div>
                                 <div className="flex justify-between items-start pl-2">
@@ -386,28 +415,78 @@ export const GovernanceDashboard = () => {
                         <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
                             Manage and track organizational risks. Update risk status, add mitigation strategies, and monitor progress.
                         </p>
-                        <div className="space-y-3">
-                            {risks.map((risk) => (
-                                <div key={risk.id} style={{ padding: '1rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', borderLeft: `4px solid ${getRiskColor(risk.level)}` }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                        <div>
-                                            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{risk.title}</div>
-                                            <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Mitigation: {risk.mitigation}</div>
-                                        </div>
-                                        <span style={{ fontSize: '0.8rem', fontWeight: 600, padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-sm)', background: getRiskColor(risk.level), color: 'white' }}>
-                                            {risk.level}
-                                        </span>
+
+                        {isAddingRisk ? (
+                            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg mb-4">
+                                <h4 className="font-semibold mb-3">Add New Risk</h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Risk Title</label>
+                                        <input
+                                            type="text"
+                                            className="form-input w-full"
+                                            value={newRisk.title}
+                                            onChange={e => setNewRisk({ ...newRisk, title: e.target.value })}
+                                            placeholder="e.g. Fire Safety Compliance"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Risk Level</label>
+                                        <select
+                                            className="form-input w-full"
+                                            value={newRisk.level}
+                                            onChange={e => setNewRisk({ ...newRisk, level: e.target.value })}
+                                        >
+                                            <option value="Low">Low</option>
+                                            <option value="Medium">Medium</option>
+                                            <option value="High">High</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Mitigation Strategy</label>
+                                        <input
+                                            type="text"
+                                            className="form-input w-full"
+                                            value={newRisk.mitigation}
+                                            onChange={e => setNewRisk({ ...newRisk, mitigation: e.target.value })}
+                                            placeholder="e.g. Daily checks implemented"
+                                        />
+                                    </div>
+                                    <div className="flex gap-2 justify-end mt-2">
+                                        <button className="btn btn-secondary text-sm" onClick={() => setIsAddingRisk(false)}>Cancel</button>
+                                        <button className="btn btn-primary text-sm" onClick={handleAddRisk} disabled={savingRisk}>
+                                            {savingRisk ? 'Saving...' : 'Save Risk'}
+                                        </button>
                                     </div>
                                 </div>
-                            ))}
-                        </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {risks.length === 0 ? <p className="text-center text-gray-500 py-4">No risks found.</p> : risks.map((risk) => (
+                                    <div key={risk.id} style={{ padding: '1rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', borderLeft: `4px solid ${getRiskColor(risk.level)}` }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <div>
+                                                <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{risk.title}</div>
+                                                <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Mitigation: {risk.mitigation}</div>
+                                            </div>
+                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, padding: '0.25rem 0.5rem', borderRadius: 'var(--radius-sm)', background: getRiskColor(risk.level), color: 'white' }}>
+                                                {risk.level}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                            <button
-                                className="btn btn-secondary flex-1"
-                                onClick={() => alert('Add New Risk feature coming soon')}
-                            >
-                                + Add New Risk
-                            </button>
+                            {!isAddingRisk && (
+                                <button
+                                    className="btn btn-secondary flex-1"
+                                    onClick={() => setIsAddingRisk(true)}
+                                >
+                                    <Plus size={16} className="mr-2" /> Add New Risk
+                                </button>
+                            )}
                             <button
                                 className="btn btn-primary flex-1"
                                 onClick={() => setShowRiskRegister(false)}
