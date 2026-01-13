@@ -153,8 +153,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     id: userId,
                     email: '',
                     full_name: 'User',
-                    organization_id: null,
-                    organization_name: null,
+                    organization_id: 'demo-org-001',
+                    organization_name: 'Demo Organization',
                     role: 'owner',
                     onboarding_completed: true, // Bypass onboarding
                     subscription_tier: 'tier_enterprise' // Enable Enterprise features
@@ -167,8 +167,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 id: userId,
                 email: '',
                 full_name: 'User',
-                organization_id: null,
-                organization_name: null,
+                organization_id: 'demo-org-001', // Provide a fallback org ID for dev/demo
+                organization_name: 'Demo Organization',
                 role: 'owner',
                 onboarding_completed: true, // Bypass onboarding
                 subscription_tier: 'tier_enterprise' // Enable Enterprise features
