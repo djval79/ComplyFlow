@@ -113,7 +113,47 @@ export const complianceService = {
             }
         }
 
-        // 2. Check for missing policies (Policy Gap Alerts)
+        // 2. Check for Pending Reporting Events (Home Office SMS)
+        const { data: reports, error: rErr } = await supabase
+            .from('sponsor_reporting_log')
+            .select('*, worker:sponsored_workers(full_name)')
+            .eq('organization_id', organizationId)
+            .eq('status', 'pending');
+
+        if (!rErr && reports) {
+            for (const report of reports) {
+                if (report.deadline_date) {
+                    const deadline = new Date(report.deadline_date);
+                    const diffDays = Math.ceil((deadline.getTime() - now.getTime()) / (1000 * 3600 * 24));
+
+                    if (diffDays <= 3) { // Alert only if very close
+                        // Create persistent alert if not exists
+                        const { data: existing } = await supabase
+                            .from('compliance_alerts')
+                            .select('*')
+                            .eq('organization_id', organizationId)
+                            .eq('alert_type', 'cos_usage') // Reusing cos_usage or could add new type
+                            .eq('title', `SMS Report Due: ${report.worker?.full_name}`)
+                            .eq('is_resolved', false)
+                            .maybeSingle();
+
+                        if (!existing) {
+                            await supabase.from('compliance_alerts').insert({
+                                organization_id: organizationId,
+                                alert_type: 'cos_usage',
+                                severity: 'critical',
+                                title: `SMS Report Due: ${report.worker?.full_name}`,
+                                description: `Home Office reporting deadline is in ${diffDays} days for ${report.event_type}. Failure to report can risk licence downgrade.`,
+                                related_worker_id: report.worker_id,
+                                due_date: report.deadline_date
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Check for missing policies (Policy Gap Alerts)
         // This could be integrated after a Gap Analysis is run
     },
 

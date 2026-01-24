@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { ArrowLeft, BookOpen, Scale, ShieldAlert, GraduationCap, Globe, Sparkles, Loader2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, BookOpen, Scale, ShieldAlert, GraduationCap, Globe, Sparkles, Loader2, Lock as LockIcon } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { RegulatoryIntelligenceHub } from '../components/RegulatoryIntelligenceHub';
+import { useAuth } from '../context/AuthContext';
 
 export const RegulatoryIntelligence = () => {
+    const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [query, setQuery] = useState('');
     const [result, setResult] = useState<any>(null);
@@ -35,16 +37,16 @@ export const RegulatoryIntelligence = () => {
 
             // Chunking slightly for ingestion
             const text = `
-                CQC SAF 2025: ${JSON.stringify(safQualityStatements)}
-                HOME OFFICE RULES 2025: ${JSON.stringify(homeOffice2025Rules)}
+                CQC SAF 2026: ${JSON.stringify(safQualityStatements)}
+                HOME OFFICE RULES 2026: ${JSON.stringify(homeOffice2025Rules)}
             `;
 
             const { error } = await supabase.functions.invoke('source-layer', {
-                body: { action: 'ingest-text', payload: { text, metadata: { source: 'System Hydration', type: 'rules_2025' } } }
+                body: { action: 'ingest-text', payload: { text, metadata: { source: 'System Hydration', type: 'rules_2026' } } }
             });
 
             if (error) throw error;
-            alert('Knowledge Base Successfully Hydrated with 2025 Regulatory Rules!');
+            alert('Knowledge Base Successfully Hydrated with 2026 Regulatory Rules!');
         } catch (e: any) {
             alert('Hydration Error: ' + e.message);
         } finally {
@@ -57,17 +59,49 @@ export const RegulatoryIntelligence = () => {
 
             {/* Header */}
             <div style={{ marginBottom: '2rem' }}>
-                <button
-                    className="btn btn-secondary"
-                    onClick={() => navigate('/dashboard')}
-                    style={{ marginBottom: '1rem', padding: '0.5rem 1rem' }}
-                >
-                    <ArrowLeft size={16} /> Back to Dashboard
-                </button>
-                <h1>Regulatory Intelligence</h1>
-                <p style={{ color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>
-                    Real-time updates from CQC, Home Office, NICE, and DHSC. Stay ahead of regulatory changes.
-                </p>
+                <div className="flex justify-between items-start">
+                    <div>
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => navigate('/dashboard')}
+                            style={{ marginBottom: '1rem', padding: '0.5rem 1rem' }}
+                        >
+                            <ArrowLeft size={16} /> {isAuthenticated ? 'Back to Dashboard' : 'Home'}
+                        </button>
+                        <h1>Regulatory Intelligence</h1>
+                        <p style={{ color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>
+                            Real-time updates from CQC, Home Office, NICE, and DHSC. Stay ahead of regulatory changes.
+                        </p>
+                    </div>
+                </div>
+
+                {!isAuthenticated && (
+                    <div style={{
+                        marginTop: '1.5rem',
+                        background: 'linear-gradient(to right, #2563eb, #1da1f2)',
+                        color: 'white',
+                        padding: '1.25rem',
+                        borderRadius: 'var(--radius-lg)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '1rem',
+                        flexWrap: 'wrap'
+                    }}>
+                        <div className="flex items-center gap-3">
+                            <LockIcon size={24} />
+                            <div>
+                                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Guest Access</h3>
+                                <p style={{ margin: 0, opacity: 0.9, fontSize: '0.9rem' }}>
+                                    You are viewing the public feed. Sign up to get AI impact analysis for your care home.
+                                </p>
+                            </div>
+                        </div>
+                        <Link to="/signup" className="btn" style={{ background: 'white', color: '#2563eb', border: 'none', fontWeight: 600 }}>
+                            Get Custom Alerts
+                        </Link>
+                    </div>
+                )}
             </div>
 
             {/* Real-Time Regulatory Updates Hub */}
@@ -75,8 +109,25 @@ export const RegulatoryIntelligence = () => {
                 <RegulatoryIntelligenceHub maxItems={10} showFilters={true} />
             </div>
 
-            {/* Knowledge Engine Interface */}
-            <div className="card" style={{ marginBottom: '2rem', borderTop: '4px solid var(--color-primary)' }}>
+            {/* Knowledge Engine Interface (Gated) */}
+            <div className="card" style={{ marginBottom: '2rem', borderTop: '4px solid var(--color-primary)', position: 'relative', overflow: 'hidden' }}>
+                {!isAuthenticated && (
+                    <div style={{
+                        position: 'absolute', inset: 0, zIndex: 10,
+                        background: 'rgba(255,255,255,0.7)', backdropFilter: 'blur(3px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <div style={{ textAlign: 'center', background: 'white', padding: '2rem', borderRadius: '1rem', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+                            <Sparkles size={32} color="var(--color-primary)" style={{ margin: '0 auto 1rem' }} />
+                            <h3>Want Expert Answers?</h3>
+                            <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem', maxWidth: '300px' }}>
+                                Our AI Knowledge Engine has memorized 50,000+ pages of CQC regulations. Ask it anything.
+                            </p>
+                            <Link to="/signup" className="btn btn-primary btn-full">Unlock Free AI Access</Link>
+                        </div>
+                    </div>
+                )}
+
                 <div className="flex justify-between items-center mb-4">
                     <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <Sparkles size={20} color="var(--color-primary)" /> Ask the Regulatory Knowledge Engine
@@ -88,22 +139,29 @@ export const RegulatoryIntelligence = () => {
                         disabled={hydrating}
                     >
                         {hydrating ? <Loader2 className="animate-spin" size={14} /> : <Globe size={14} />}
-                        {hydrating ? ' Hydrating...' : ' Sync 2025 Rules'}
+                        {hydrating ? ' Hydrating...' : ' Sync 2026 Rules'}
                     </button>
                 </div>
 
                 <div className="flex flex-col gap-4">
-                    <textarea
-                        placeholder="e.g., What are the 'I statements' for Safe Care under the 2025 SAF?"
-                        className="form-input"
-                        style={{ minHeight: '100px', width: '100%', padding: '1rem' }}
-                        value={query}
-                        onChange={e => setQuery(e.target.value)}
-                    />
+                    {isAuthenticated ? (
+                        <textarea
+                            placeholder="e.g., What are the 'I statements' for Safe Care under the 2026 SAF?"
+                            className="form-input"
+                            style={{ minHeight: '100px', width: '100%', padding: '1rem' }}
+                            value={query}
+                            onChange={e => setQuery(e.target.value)}
+                        />
+                    ) : (
+                        <div style={{ padding: '2rem', background: '#f1f5f9', borderRadius: 'var(--radius-md)', textAlign: 'center', color: '#64748b' }}>
+                            <p style={{ marginBottom: '1rem' }}>AI Analysis is reserved for members.</p>
+                            <Link to="/signup" className="btn btn-primary">Start Free Trial</Link>
+                        </div>
+                    )}
                     <button
                         className="btn btn-primary btn-full"
                         onClick={handleQuery}
-                        disabled={loading || !query}
+                        disabled={loading || !query || !isAuthenticated}
                     >
                         {loading ? <Loader2 className="animate-spin" /> : <SearchIcon />}
                         {loading ? 'Consulting Knowledge Base...' : 'Analyze & Search'}
@@ -175,7 +233,7 @@ export const RegulatoryIntelligence = () => {
                 <div className="card">
                     <h3 className="flex items-center gap-2 mb-3"><GraduationCap color="var(--color-accent)" /> Compliance Horizon</h3>
                     <p className="text-sm text-secondary">
-                        The 2025/2026 transition to fully digital <strong>eVisas</strong> is the single biggest risk point for care providers. Audit your BRP files now.
+                        The 2026 digital immigration system means <strong>eVisas</strong> are now essential. Physical BRPs are no longer valid. Audit your files now.
                     </p>
                 </div>
             </div>

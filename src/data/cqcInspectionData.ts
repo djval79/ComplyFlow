@@ -6,6 +6,14 @@ export interface QualityStatement {
     title: string;
     weStatement: string;
     evidenceCategories: string[];
+    requiredEvidence?: EvidenceType[];
+}
+
+export interface EvidenceType {
+    id: string;
+    name: string;
+    description: string;
+    importance: 'critical' | 'important' | 'standard';
 }
 
 export interface InspectionQuestion {
@@ -39,7 +47,12 @@ export const QUALITY_STATEMENTS: QualityStatement[] = [
         keyQuestion: 'safe',
         title: 'Learning culture',
         weStatement: 'We have a proactive and positive culture of safety based on openness and honesty, in which concerns about safety are listened to, safety events are investigated and reported thoroughly, and lessons are learned to continually identify and embed good practice.',
-        evidenceCategories: ['incident reporting', 'root cause analysis', 'staff feedback', 'safety improvements']
+        evidenceCategories: ['incident reporting', 'root cause analysis', 'staff feedback', 'safety improvements'],
+        requiredEvidence: [
+            { id: 'S1-E1', name: 'Significant Event Analysis (SEA) Log', description: 'Records of incidents and the learning identified.', importance: 'critical' },
+            { id: 'S1-E2', name: 'Staff Safety Culture Survey', description: 'Annual or periodic feedback from staff on safety openness.', importance: 'important' },
+            { id: 'S1-E3', name: 'Lessons Learned Meeting Minutes', description: 'Documentation of team discussions following safety events.', importance: 'standard' }
+        ]
     },
     {
         id: 'S2',
@@ -53,7 +66,12 @@ export const QUALITY_STATEMENTS: QualityStatement[] = [
         keyQuestion: 'safe',
         title: 'Safeguarding',
         weStatement: 'We work with people to understand what being safe means to them as well as with our partners on the best way to achieve this. We concentrate on improving people\'s lives while protecting their right to live in safety, free from bullying, harassment, abuse, discrimination, avoidable harm and neglect.',
-        evidenceCategories: ['safeguarding policies', 'staff training', 'incident reports', 'partner agency relationships']
+        evidenceCategories: ['safeguarding policies', 'staff training', 'incident reports', 'partner agency relationships'],
+        requiredEvidence: [
+            { id: 'S3-E1', name: 'Safeguarding Adults Policy', description: 'Up-to-date policy including local authority reporting paths.', importance: 'critical' },
+            { id: 'S3-E2', name: 'Safeguarding Training Matrix', description: 'Evidence that all staff have completed Tier 1/2 training.', importance: 'critical' },
+            { id: 'S3-E3', name: 'Safeguarding Case Studies/Reviews', description: 'Examples of how concerns were managed using "Making Safeguarding Personal".', importance: 'important' }
+        ]
     },
     {
         id: 'S4',
@@ -257,7 +275,12 @@ export const QUALITY_STATEMENTS: QualityStatement[] = [
         keyQuestion: 'wellLed',
         title: 'Governance, management and sustainability',
         weStatement: 'We have clear responsibilities, roles, systems of accountability and good governance. We use these to manage and deliver good quality, sustainable care, treatment and support. We act on the best information about risk, performance and outcomes, and we share this securely with others when appropriate.',
-        evidenceCategories: ['governance structure', 'accountability systems', 'risk management', 'performance data']
+        evidenceCategories: ['governance structure', 'accountability systems', 'risk management', 'performance data'],
+        requiredEvidence: [
+            { id: 'W5-E1', name: 'Strategic Risk Register', description: 'Active log of organizational risks and mitigation plans.', importance: 'critical' },
+            { id: 'W5-E2', name: 'Quality Assurance Audit Calendar', description: 'Schedule of internal audits and compliance checks.', importance: 'important' },
+            { id: 'W5-E3', name: 'Business Continuity Plan', description: 'Procedures for managing service disruptions.', importance: 'critical' }
+        ]
     },
     {
         id: 'W6',

@@ -14,7 +14,7 @@ export const TrainingEVisa = () => {
     const slides = [
         {
             title: "What is an eVisa?",
-            content: "The UK Home Office is moving to a fully digital immigration system. By 2025, physical Biometric Residence Permits (BRPs) will no longer be valid proofs of right to work.",
+            content: "The UK Home Office has moved to a fully digital immigration system. As of 2026, physical Biometric Residence Permits (BRPs) are no longer valid proofs of right to work.",
             key_point: "Goal: Phase out physical documents by Dec 31, 2024.",
             quiz: "Does a BRP prove right to work after 2024?",
             answers: ["Yes", "No", "Only if renewed"],
@@ -49,7 +49,7 @@ export const TrainingEVisa = () => {
                     await supabase.from('training_completions').insert({
                         organization_id: profile.organization_id,
                         user_id: user.id,
-                        module_id: 'evisa_transition_2025',
+                        module_id: 'evisa_transition_2026',
                         module_name: 'eVisa Transition Training',
                         score: 100,
                         passed: true

@@ -4,6 +4,12 @@ import './index.css'
 import App from './App.tsx'
 
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { initPostHog } from './lib/posthog'
+import { initSentry } from './lib/sentry'
+
+// Initialize Analytics & Error Tracking
+initSentry()
+initPostHog()
 
 // Unregister service workers in development to prevent caching issues
 if ('serviceWorker' in navigator) {

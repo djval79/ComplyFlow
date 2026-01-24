@@ -372,12 +372,12 @@ export const GovernanceDashboard = () => {
                         </div>
                         <div className="space-y-3">
                             {[
-                                { title: 'Infection Control', date: 'Jan 15, 2025', status: 'Overdue', color: '#dc2626' },
-                                { title: 'Care Plans Audit', date: 'Jan 20, 2025', status: 'In Progress', color: '#f59e0b' },
-                                { title: 'Health & Safety', date: 'Jan 27, 2025', status: 'Scheduled', color: '#6b7280' },
-                                { title: 'Medication Audit', date: 'Feb 5, 2025', status: 'Scheduled', color: '#6b7280' },
-                                { title: 'Staff Training Review', date: 'Feb 15, 2025', status: 'Scheduled', color: '#6b7280' },
-                                { title: 'Fire Safety Drill', date: 'Feb 28, 2025', status: 'Scheduled', color: '#6b7280' },
+                                { title: 'Infection Control', date: 'Jan 15, 2026', status: 'Overdue', color: '#dc2626' },
+                                { title: 'Care Plans Audit', date: 'Jan 20, 2026', status: 'In Progress', color: '#f59e0b' },
+                                { title: 'Health & Safety', date: 'Jan 27, 2026', status: 'Scheduled', color: '#6b7280' },
+                                { title: 'Medication Audit', date: 'Feb 5, 2026', status: 'Scheduled', color: '#6b7280' },
+                                { title: 'Staff Training Review', date: 'Feb 15, 2026', status: 'Scheduled', color: '#6b7280' },
+                                { title: 'Fire Safety Drill', date: 'Feb 28, 2026', status: 'Scheduled', color: '#6b7280' },
                             ].map((audit, i) => (
                                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', background: '#f8fafc', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
                                     <div>

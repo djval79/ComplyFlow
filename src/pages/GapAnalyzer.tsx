@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { ProductionErrorBoundary } from '../components/ProductionErrorBoundary';
+import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, CheckCircle, AlertTriangle, XCircle, Download, Plus, Loader2, ArrowRight, Brain, Zap } from 'lucide-react';
 
 import { COMPLIANCE_RULES } from '../config/complianceRules';
@@ -10,6 +12,9 @@ import { supabase } from '../lib/supabase';
 import { generateComplianceReport } from '../services/pdfService';
 import type { ReportSection } from '../services/pdfService';
 import { UpgradePrompt } from '../components/ConversionWidgets';
+import { createBulkActions, type CreateActionInput } from '../services/actionsService';
+import { toast } from 'react-hot-toast';
+import { trackUsage } from '../services/usageService';
 
 interface AnalysisResult {
     id: string;
@@ -21,7 +26,8 @@ interface AnalysisResult {
     recommendation?: string;
 }
 
-export const GapAnalyzer = () => {
+const GapAnalyzerContent = () => {
+    const navigate = useNavigate();
     const [stage, setStage] = useState<'upload' | 'analyzing' | 'results'>('upload');
     const [fileObj, setFileObj] = useState<File | null>(null);
     const [fileName, setFileName] = useState<string>('');
@@ -29,12 +35,15 @@ export const GapAnalyzer = () => {
     const [error, setError] = useState<string | null>(null);
     const [generatingFixId, setGeneratingFixId] = useState<string | null>(null);
     const [generatedClause, setGeneratedClause] = useState<{ id: string, text: string } | null>(null);
+    const [creatingActions, setCreatingActions] = useState(false);
+    const [actionsCreated, setActionsCreated] = useState(false);
 
     // New State for "Reasoning Layer"
     const { profile, isDemo } = useAuth();
     const [useAI, setUseAI] = useState<boolean>(false);
     const [apiKey, setApiKey] = useState<string>("");
     const [saving, setSaving] = useState(false);
+    const [credits, setCredits] = useState<number>(0);
     const isEdgeMode = shouldUseEdgeFunction();
 
     useEffect(() => {
@@ -43,7 +52,23 @@ export const GapAnalyzer = () => {
         if (envKey && envKey !== 'your_gemini_api_key' && !envKey.includes('INSERT_KEY')) {
             setApiKey(envKey);
         }
-    }, []);
+
+        if (profile?.organization_id) {
+            fetchCredits();
+        }
+    }, [profile?.organization_id]);
+
+    const fetchCredits = async () => {
+        const { data, error } = await supabase
+            .from('organization_credits')
+            .select('gap_analysis_credits')
+            .eq('organization_id', profile?.organization_id)
+            .maybeSingle();
+
+        if (!error && data) {
+            setCredits(data.gap_analysis_credits);
+        }
+    };
 
     const handleDrop = (e: React.DragEvent) => {
         e.preventDefault();
@@ -167,6 +192,37 @@ export const GapAnalyzer = () => {
         }
     };
 
+    const handleCreateActions = async () => {
+        if (!profile?.organization_id || results.length === 0) return;
+
+        const gapsToConvert = results.filter(r => r.status !== 'pass');
+        if (gapsToConvert.length === 0) {
+            toast.success('No gaps found! Your policy is compliant.');
+            return;
+        }
+
+        setCreatingActions(true);
+        try {
+            const actionInputs: CreateActionInput[] = gapsToConvert.map(gap => ({
+                source: 'gap_analysis',
+                title: `Gap Found: ${gap.name}`,
+                description: `Finding during analysis of ${fileName}: ${gap.gap || gap.quote}\n\nRecommendation: ${gap.recommendation}`,
+                recommendation: gap.recommendation || 'Review policy and update according to CQC guidance.',
+                priority: gap.status === 'fail' ? 'high' : 'medium',
+                key_question: 'wellLed' // Default for policies, or map if possible
+            }));
+
+            await createBulkActions(profile.organization_id, actionInputs);
+            toast.success(`Created ${actionInputs.length} compliance actions.`);
+            setActionsCreated(true);
+        } catch (err) {
+            console.error('Failed to create actions:', err);
+            toast.error('Failed to create actions.');
+        } finally {
+            setCreatingActions(false);
+        }
+    };
+
     const handleExportPDF = () => {
         const sections: ReportSection[] = [
             {
@@ -256,6 +312,14 @@ export const GapAnalyzer = () => {
     const handleAnalyze = async () => {
         if (!fileObj) return;
 
+        // Check for subscription or credits if using AI
+        const isPremium = ['pro', 'enterprise'].includes(profile?.subscription_tier || '') || isDemo;
+        if (useAI && !isPremium && credits <= 0) {
+            toast.error('You need analysis credits to run an AI Deep Analysis. Please purchase one or upgrade to Pro.');
+            navigate('/pricing');
+            return;
+        }
+
         setStage('analyzing');
         setError(null);
         setGeneratedClause(null);
@@ -298,6 +362,28 @@ export const GapAnalyzer = () => {
                 }));
                 setResults(mappedResults);
                 await handleSaveAnalysis(mappedResults);
+
+                // Track AI usage for metering
+                try {
+                    await trackUsage(profile?.organization_id || '', 'ai_analysis');
+                } catch (usageErr) {
+                    console.warn('Failed to track usage:', usageErr);
+                }
+
+                // Consume credit if not a premium user
+                if (!isPremium && !isDemo) {
+                    const { error: creditErr } = await supabase
+                        .from('organization_credits')
+                        .update({ gap_analysis_credits: credits - 1 })
+                        .eq('organization_id', profile?.organization_id);
+
+                    if (creditErr) {
+                        console.error('Failed to consume credit:', creditErr);
+                    } else {
+                        setCredits(prev => prev - 1);
+                        toast.success('1 Analysis Credit used.');
+                    }
+                }
 
             } else {
                 // REGEX MODE (Fallback / Default)
@@ -418,10 +504,22 @@ export const GapAnalyzer = () => {
                                         )}
                                     </>
                                 ) : (
-                                    <UpgradePrompt
-                                        feature="AI Deep Reasoning"
-                                        description="Upgrade to Professional to unlock deep regulatory analysis, auto-drafted policies, and instant gap detection."
-                                    />
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        <UpgradePrompt
+                                            feature="AI Deep Reasoning"
+                                            description="Upgrade to Professional to unlock deep regulatory analysis, auto-drafted policies, and instant gap detection."
+                                        />
+                                        <div style={{ textAlign: 'center' }}>
+                                            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-tertiary)', marginBottom: '0.75rem' }}>Or just need a one-time audit?</p>
+                                            <button
+                                                className="btn btn-secondary"
+                                                style={{ width: '100%', borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
+                                                onClick={() => window.location.href = '/pricing'}
+                                            >
+                                                Get a Single Gap Analysis (£29)
+                                            </button>
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         )}
@@ -465,7 +563,7 @@ export const GapAnalyzer = () => {
 
                         <button
                             className="btn btn-primary"
-                            disabled={!fileObj || (useAI && (!(['pro', 'enterprise'].includes(profile?.subscription_tier || '') || isDemo) || (!apiKey && !isEdgeMode)))}
+                            disabled={!fileObj || (useAI && !(['pro', 'enterprise'].includes(profile?.subscription_tier || '') || isDemo || credits > 0) && (!apiKey && !isEdgeMode))}
                             onClick={(e) => { e.stopPropagation(); handleAnalyze(); }}
                             style={{ padding: '0.75rem 2rem' }}
                         >
@@ -507,7 +605,16 @@ export const GapAnalyzer = () => {
                                 >
                                     <Download size={16} /> Export PDF Report
                                 </button>
-                                <button className="btn btn-secondary" onClick={() => { setStage('upload'); setFileObj(null); setFileName(''); }}>New Scan</button>
+                                <button
+                                    className="btn btn-primary"
+                                    onClick={handleCreateActions}
+                                    disabled={creatingActions || actionsCreated || results.filter(r => r.status !== 'pass').length === 0}
+                                    style={{ background: 'var(--color-accent)', borderColor: 'var(--color-accent)' }}
+                                >
+                                    {creatingActions ? <Loader2 size={16} className="spin" /> : actionsCreated ? <CheckCircle size={16} /> : <Zap size={16} />}
+                                    {actionsCreated ? 'Actions Created' : 'Create Actions from Gaps'}
+                                </button>
+                                <button className="btn btn-secondary" onClick={() => { setStage('upload'); setFileObj(null); setFileName(''); setActionsCreated(false); }}>New Scan</button>
                             </div>
                         </div>
 
@@ -618,3 +725,9 @@ export const GapAnalyzer = () => {
         </div>
     );
 };
+
+export const GapAnalyzer = () => (
+    <ProductionErrorBoundary>
+        <GapAnalyzerContent />
+    </ProductionErrorBoundary>
+);

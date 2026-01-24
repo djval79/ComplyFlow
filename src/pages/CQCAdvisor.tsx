@@ -1,12 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, MessageSquare, Bot, AlertCircle, FileText } from 'lucide-react';
+import { Send, Sparkles, MessageSquare, Bot, AlertCircle, FileText, Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { runAdvisorChatStream } from '../services/aiAnalysis';
 import type { ChatMessage } from '../services/aiAnalysis';
 import { generateComplianceReport } from '../services/pdfService';
+import { useAuth } from '../context/AuthContext';
 
 export const CQCAdvisor = () => {
+    const { profile, isDemo } = useAuth();
+    const navigate = useNavigate();
+
+    // Feature gating: Only Pro and Enterprise (and Demo) get the AI Advisor
+    const isPremium = profile?.subscription_tier === 'pro' || profile?.subscription_tier === 'enterprise' || isDemo;
+
     // Chat state
     const [messages, setMessages] = useState<{ id: number; sender: 'user' | 'advisor'; text: string; isStreaming?: boolean }[]>([
         {
@@ -41,6 +50,10 @@ export const CQCAdvisor = () => {
 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isPremium) {
+            toast.error('AI Advisor is a premium feature. Please upgrade to Pro.');
+            return;
+        }
         if (!input.trim()) return;
 
         // 1. Add User Message to UI
@@ -70,7 +83,8 @@ export const CQCAdvisor = () => {
                             msg.id === responseId ? { ...msg, text: chunkText } : msg
                         ));
                     },
-                    apiKey
+                    apiKey,
+                    profile?.organization_id || undefined
                 );
 
                 // 3. Update History & Finalize UI
@@ -106,6 +120,32 @@ export const CQCAdvisor = () => {
             setIsTyping(false);
         }
     };
+
+    if (!isPremium) {
+        return (
+            <div className="container animate-enter" style={{ padding: '4rem 1rem', maxWidth: '600px', textAlign: 'center' }}>
+                <div style={{ padding: '3rem', background: 'white', borderRadius: '16px', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-lg)' }}>
+                    <div style={{
+                        width: '80px', height: '80px', background: 'var(--color-primary-light)', borderRadius: '50%',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem auto', color: 'var(--color-primary)'
+                    }}>
+                        <Shield size={40} />
+                    </div>
+                    <h2 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '1rem' }}>Premium Feature</h2>
+                    <p style={{ color: 'var(--color-text-secondary)', marginBottom: '2rem', lineHeight: 1.6 }}>
+                        The CQC Virtual Advisor is part of our <strong>Professional</strong> plan.
+                        Get 24/7 expert guidance, automated policy drafting, and regulatory intelligence today.
+                    </p>
+                    <button className="btn btn-primary btn-full" onClick={() => navigate('/pricing')}>
+                        Upgrade to Professional
+                    </button>
+                    <button className="btn btn-secondary btn-full" style={{ marginTop: '1rem' }} onClick={() => navigate('/dashboard')}>
+                        Back to Dashboard
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="container animate-enter" style={{ padding: '2rem 1rem', maxWidth: '1000px', height: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>

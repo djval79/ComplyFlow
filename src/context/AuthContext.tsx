@@ -13,6 +13,8 @@ export interface UserProfile {
     role: 'owner' | 'admin' | 'member';
     onboarding_completed?: boolean;
     subscription_tier?: string;
+    sponsor_licence_number?: string | null;
+    trial_ends_at?: string | null;
 }
 
 interface AuthContextType {
@@ -22,7 +24,7 @@ interface AuthContextType {
     loading: boolean;
     isDemo: boolean;
     isAuthenticated: boolean; // New flag to track if user is "logged in" regardless of mode
-    signUp: (email: string, password: string, fullName: string, orgName: string, orgId?: string, role?: string) => Promise<{ error: any }>;
+    signUp: (email: string, password: string, fullName: string, orgName: string, orgId?: string, role?: string, inviteToken?: string) => Promise<{ error: any }>;
     signIn: (email: string, password: string) => Promise<{ error: any }>;
     signOut: () => Promise<void>;
     updateProfile: (profile: Partial<UserProfile>) => Promise<{ error: any }>;
@@ -37,6 +39,7 @@ const DEMO_USER: UserProfile = {
     organization_name: 'MeCare Health Services',
     role: 'owner',
     subscription_tier: 'pro',
+    sponsor_licence_number: '12ABC345D'
 };
 
 // ============ CONTEXT ============
@@ -116,7 +119,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const fetchProfile = async (userId: string) => {
         try {
-            console.log('[AuthContext] Fetching profile for:', userId);
+            // Fetch profile for authenticated user
 
             // Add a timeout to prevent infinite hanging (common with RLS issues)
             const timeoutPromise = new Promise((_, reject) =>
@@ -127,7 +130,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 .from('profiles')
                 .select(`
                     *,
-                    organizations(name, subscription_tier)
+                    organizations(name, subscription_tier, sponsor_licence_number, trial_ends_at)
                 `)
                 .eq('id', userId)
                 .maybeSingle();
@@ -140,11 +143,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
 
             if (data) {
-                console.log('[AuthContext] Profile loaded:', data);
+                // Profile loaded successfully
+                setProfile(data);
                 setProfile({
                     ...data,
                     organization_name: data.organizations?.name || null,
-                    subscription_tier: data.organizations?.subscription_tier || 'free' // Default to free
+                    subscription_tier: data.organizations?.subscription_tier || 'free',
+                    sponsor_licence_number: data.organizations?.sponsor_licence_number || null,
+                    trial_ends_at: data.organizations?.trial_ends_at || null
                 });
             } else {
                 console.warn('[AuthContext] No profile found for user:', userId);
@@ -153,11 +159,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     id: userId,
                     email: '',
                     full_name: 'User',
-                    organization_id: 'demo-org-001',
-                    organization_name: 'Demo Organization',
+                    organization_id: null,
+                    organization_name: 'Initial Organization',
                     role: 'owner',
-                    onboarding_completed: true, // Bypass onboarding
-                    subscription_tier: 'tier_enterprise' // Enable Enterprise features
+                    onboarding_completed: false, // Force them to onboarding if possible
+                    subscription_tier: 'free'
                 });
             }
         } catch (error) {
@@ -167,16 +173,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 id: userId,
                 email: '',
                 full_name: 'User',
-                organization_id: 'demo-org-001', // Provide a fallback org ID for dev/demo
-                organization_name: 'Demo Organization',
+                organization_id: null,
+                organization_name: 'Initial Organization',
                 role: 'owner',
-                onboarding_completed: true, // Bypass onboarding
-                subscription_tier: 'tier_enterprise' // Enable Enterprise features
+                onboarding_completed: false,
+                subscription_tier: 'free'
             });
         }
     };
 
-    const signUp = async (email: string, password: string, fullName: string, orgName: string, orgId?: string, role?: string) => {
+    const signUp = async (email: string, password: string, fullName: string, orgName: string, orgId?: string, role?: string, inviteToken?: string) => {
         if (isDemo) {
             setProfile(DEMO_USER);
             setDemoAuthenticated(true);
@@ -193,7 +199,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     full_name: fullName,
                     organization_name: orgName,
                     organization_id: orgId || '',
-                    role: role || 'owner' // If orgId is present, this role will be used by the trigger, else ignored (trigger defaults to owner for new orgs)
+                    role: role || 'owner',
+                    invite_token: inviteToken || ''
                 }
             }
         });
@@ -214,6 +221,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             password,
         });
 
+        if (!error) {
+            import('../lib/posthog').then(({ captureEvent }) => {
+                captureEvent('login', { method: 'email' });
+            });
+        }
+
         return { error };
     };
 
@@ -225,6 +238,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             return;
         }
         await supabase.auth.signOut();
+        import('../lib/posthog').then(({ captureEvent }) => {
+            captureEvent('logout');
+            // Reset PostHog session
+            import('posthog-js').then((ph) => ph.default.reset());
+        });
     };
 
     const updateProfile = async (updates: Partial<UserProfile>) => {

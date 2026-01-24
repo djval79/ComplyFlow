@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { ProductionErrorBoundary } from '../components/ProductionErrorBoundary';
 import {
     Send, Play, RotateCcw, CheckCircle, Brain, Loader2,
     Target, Clock, Users, Shield, Heart, Zap, Award,
     ChevronRight, AlertTriangle, Lightbulb, Star, TrendingUp,
-    Download, FileText, MessageSquare, Mic, MicOff
+    Download, FileText, MessageSquare, Mic, MicOff, CheckSquare, ListChecks
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { useNavigate } from 'react-router-dom';
 import {
     INSPECTION_SCENARIOS, INSPECTION_QUESTIONS, KEY_QUESTIONS, SCORING_RUBRIC,
     getQuestionsForScenario, type InspectionScenario, type InspectionQuestion
@@ -15,6 +17,8 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { shouldUseEdgeFunction, callEdgeFunctionAI, initializeAI, runWithRetry, delay } from '../services/aiCore';
 import type { ChatMessage } from '../services/aiCore';
+import { createBulkActions, type CreateActionInput } from '../services/actionsService';
+import { toast } from 'react-hot-toast';
 
 // Types
 interface EvaluatedResponse {
@@ -113,7 +117,7 @@ Format your response as JSON:
 Be fair but rigorous. A score of 3 (Good) is the baseline for compliance.
 `;
 
-export const MockInspection: React.FC = () => {
+const MockInspectionContent: React.FC = () => {
     const { profile } = useAuth();
 
     // Session State
@@ -131,6 +135,9 @@ export const MockInspection: React.FC = () => {
     const [selectedScenario, setSelectedScenario] = useState<InspectionScenario | null>(null);
     const [showResults, setShowResults] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [creatingActions, setCreatingActions] = useState(false);
+    const [actionsCreated, setActionsCreated] = useState(false);
+    const navigate = useNavigate();
 
     // AI Config
     const [apiKey, setApiKey] = useState('');
@@ -515,6 +522,7 @@ ${r.improvements.length > 0 ? `- **Areas for Improvement:** ${r.improvements.joi
         setQuestions([]);
         setCurrentQuestionIndex(0);
         setShowResults(false);
+        setActionsCreated(false);
     };
 
     // Render scenario selection
@@ -654,7 +662,7 @@ ${r.improvements.length > 0 ? `- **Areas for Improvement:** ${r.improvements.joi
             </div>
 
             {/* Start Button */}
-            {selectedScenario && isKeySet && (
+            {selectedScenario && (isKeySet || isEdgeMode) && (
                 <div style={{ textAlign: 'center', marginTop: '2rem' }}>
                     <button
                         className="btn btn-primary"
@@ -858,141 +866,209 @@ ${r.improvements.length > 0 ? `- **Areas for Improvement:** ${r.improvements.joi
         </div>
     );
 
+    // Create actions from inspection findings
+    const handleCreateActions = async () => {
+        if (!profile?.organization_id || !session) return;
+        setCreatingActions(true);
+
+        try {
+            const findingsToConvert = session.responses.filter(r => r.score < 3);
+
+            if (findingsToConvert.length === 0) {
+                toast.success('No critical failings found. Great job!');
+                setCreatingActions(false);
+                return;
+            }
+
+            const actionInputs: CreateActionInput[] = findingsToConvert.map(finding => {
+                const questionData = INSPECTION_QUESTIONS.find(q => q.id === finding.questionId);
+                return {
+                    source: 'mock_inspection',
+                    source_id: finding.questionId as any,
+                    quality_statement_id: questionData?.qualityStatementId,
+                    key_question: questionData?.keyQuestion,
+                    title: `Improvement: ${finding.question.substring(0, 50)}...`,
+                    description: `Inspector Finding: ${finding.aiEvaluation}\n\nRequired Improvements: ${finding.improvements.join(', ')}`,
+                    recommendation: `Follow CQC guidance for ${questionData?.qualityStatementId || 'this area'}. Focus on: ${finding.improvements[0] || 'compliance'}`,
+                    priority: finding.score === 1 ? 'high' : 'medium'
+                };
+            });
+
+            await createBulkActions(profile.organization_id, actionInputs);
+            toast.success(`Successfully created ${actionInputs.length} compliance actions.`);
+            setActionsCreated(true);
+        } catch (err) {
+            console.error('Failed to create actions:', err);
+            toast.error('Failed to create actions. Please try again.');
+        } finally {
+            setCreatingActions(false);
+        }
+    };
+
     // Render results
-    const renderResults = () => (
-        <div className="animate-enter">
-            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                <div style={{
-                    width: 80,
-                    height: 80,
-                    margin: '0 auto 1rem',
-                    borderRadius: '50%',
-                    background: getRatingColor(session?.overallScore || 3) + '20',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                }}>
-                    <Award size={40} color={getRatingColor(session?.overallScore || 3)} />
-                </div>
-                <h1 style={{ margin: '0 0 0.5rem' }}>Mock Inspection Complete</h1>
-                <p style={{ color: 'var(--color-text-secondary)' }}>
-                    Here's your detailed performance analysis
-                </p>
-            </div>
+    const renderResults = () => {
+        const scores = session?.responses.map(r => r.score) || [];
+        const avgScore = session?.overallScore || (scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 3);
 
-            {/* Score Summary */}
-            <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                    <div>
-                        <h2 style={{ margin: '0 0 0.25rem' }}>{session?.scenario.title}</h2>
-                        <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>
-                            Completed in {Math.round(((session?.endTime?.getTime() || Date.now()) - (session?.startTime.getTime() || Date.now())) / 60000)} minutes
-                        </p>
-                    </div>
-
+        return (
+            <div className="animate-enter">
+                <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
                     <div style={{
-                        textAlign: 'center',
-                        padding: '1rem 2rem',
-                        background: getRatingColor(session?.overallScore || 3) + '10',
-                        borderRadius: '8px'
+                        width: 80,
+                        height: 80,
+                        margin: '0 auto 1rem',
+                        borderRadius: '50%',
+                        background: getRatingColor(avgScore) + '20',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                     }}>
-                        <div style={{
-                            fontSize: '2.5rem',
-                            fontWeight: 700,
-                            color: getRatingColor(session?.overallScore || 3)
-                        }}>
-                            {(session?.overallScore || 3).toFixed(1)}
-                        </div>
-                        <div style={{
-                            fontSize: '0.9rem',
-                            fontWeight: 600,
-                            color: getRatingColor(session?.overallScore || 3)
-                        }}>
-                            {getRatingLabel(session?.overallScore || 3)}
-                        </div>
+                        <Award size={40} color={getRatingColor(avgScore)} />
                     </div>
-                </div>
-            </div>
-
-            {/* Individual Question Results */}
-            <h3 style={{ marginBottom: '1rem' }}>Question-by-Question Analysis</h3>
-
-            {session?.responses.map((response, idx) => (
-                <div
-                    key={response.questionId}
-                    className="card"
-                    style={{ padding: '1.25rem', marginBottom: '1rem' }}
-                >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                        <div style={{ flex: 1 }}>
-                            <span style={{
-                                fontSize: '0.7rem',
-                                color: 'white',
-                                background: getRatingColor(response.score),
-                                padding: '0.2rem 0.5rem',
-                                borderRadius: '4px',
-                                marginBottom: '0.5rem',
-                                display: 'inline-block'
-                            }}>
-                                {getRatingLabel(response.score)}
-                            </span>
-                            <h4 style={{ margin: '0.5rem 0 0.25rem' }}>Q{idx + 1}: {response.question}</h4>
-                        </div>
-                        <div style={{
-                            fontSize: '1.5rem',
-                            fontWeight: 700,
-                            color: getRatingColor(response.score),
-                            marginLeft: '1rem'
-                        }}>
-                            {response.score}/4
-                        </div>
-                    </div>
-
-                    <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '0.75rem' }}>
-                        {response.aiEvaluation}
+                    <h1 style={{ margin: '0 0 0.5rem' }}>Mock Inspection Complete</h1>
+                    <p style={{ color: 'var(--color-text-secondary)' }}>
+                        Here's your detailed performance analysis
                     </p>
+                </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                        {response.strengths.length > 0 && (
-                            <div style={{ background: '#f0fdf4', padding: '0.75rem', borderRadius: '6px' }}>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#166534', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    <CheckCircle size={12} /> Strengths
-                                </div>
-                                <ul style={{ margin: 0, paddingLeft: '1rem', fontSize: '0.8rem', color: '#15803d' }}>
-                                    {response.strengths.map((s, i) => <li key={i}>{s}</li>)}
-                                </ul>
-                            </div>
-                        )}
+                {/* Score Summary */}
+                <div className="card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                        <div>
+                            <h2 style={{ margin: '0 0 0.25rem' }}>{session?.scenario.title}</h2>
+                            <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>
+                                Completed in {Math.round(((session?.endTime?.getTime() || Date.now()) - (session?.startTime.getTime() || Date.now())) / 60000)} minutes
+                            </p>
+                        </div>
 
-                        {response.improvements.length > 0 && (
-                            <div style={{ background: '#fffbeb', padding: '0.75rem', borderRadius: '6px' }}>
-                                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#92400e', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                                    <Lightbulb size={12} /> Areas to Improve
-                                </div>
-                                <ul style={{ margin: 0, paddingLeft: '1rem', fontSize: '0.8rem', color: '#b45309' }}>
-                                    {response.improvements.map((i, idx) => <li key={idx}>{i}</li>)}
-                                </ul>
+                        <div style={{
+                            textAlign: 'center',
+                            padding: '1rem 2rem',
+                            background: getRatingColor(avgScore) + '10',
+                            borderRadius: '8px'
+                        }}>
+                            <div style={{
+                                fontSize: '2.5rem',
+                                fontWeight: 700,
+                                color: getRatingColor(avgScore)
+                            }}>
+                                {avgScore.toFixed(1)}
                             </div>
-                        )}
+                            <div style={{
+                                fontSize: '0.9rem',
+                                fontWeight: 600,
+                                color: getRatingColor(avgScore)
+                            }}>
+                                {getRatingLabel(avgScore)}
+                            </div>
+                        </div>
                     </div>
                 </div>
-            ))}
 
-            {/* Actions */}
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem' }}>
-                <button className="btn btn-secondary" onClick={resetInspection}>
-                    <RotateCcw size={16} style={{ marginRight: '0.5rem' }} />
-                    Start New Inspection
-                </button>
-                <button className="btn btn-primary" disabled={saving}>
-                    {saving ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-                    <span style={{ marginLeft: '0.5rem' }}>
-                        {saving ? 'Saving...' : 'Download Report'}
-                    </span>
-                </button>
+                {/* Individual Question Results */}
+                <h3 style={{ marginBottom: '1rem' }}>Question-by-Question Analysis</h3>
+
+                {session?.responses.map((response, idx) => (
+                    <div
+                        key={response.questionId}
+                        className="card"
+                        style={{ padding: '1.25rem', marginBottom: '1rem' }}
+                    >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                            <div style={{ flex: 1 }}>
+                                <span style={{
+                                    fontSize: '0.7rem',
+                                    color: 'white',
+                                    background: getRatingColor(response.score),
+                                    padding: '0.2rem 0.5rem',
+                                    borderRadius: '4px',
+                                    marginBottom: '0.5rem',
+                                    display: 'inline-block'
+                                }}>
+                                    {getRatingLabel(response.score)}
+                                </span>
+                                <h4 style={{ margin: '0.5rem 0 0.25rem' }}>Q{idx + 1}: {response.question}</h4>
+                            </div>
+                            <div style={{
+                                fontSize: '1.5rem',
+                                fontWeight: 700,
+                                color: getRatingColor(response.score),
+                                marginLeft: '1rem'
+                            }}>
+                                {response.score}/4
+                            </div>
+                        </div>
+
+                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '0.75rem' }}>
+                            {response.aiEvaluation}
+                        </p>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                            {response.strengths.length > 0 && (
+                                <div style={{ background: '#f0fdf4', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#166534', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        <CheckCircle size={12} /> Strengths
+                                    </div>
+                                    <ul style={{ margin: 0, paddingLeft: '1rem', fontSize: '0.8rem', color: '#15803d' }}>
+                                        {response.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {response.improvements.length > 0 && (
+                                <div style={{ background: '#fffbeb', padding: '0.75rem', borderRadius: '6px' }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#92400e', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                        <Lightbulb size={12} /> Areas to Improve
+                                    </div>
+                                    <ul style={{ margin: 0, paddingLeft: '1rem', fontSize: '0.8rem', color: '#b45309' }}>
+                                        {response.improvements.map((i, idx) => <li key={idx}>{i}</li>)}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))}
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '2rem', flexWrap: 'wrap' }}>
+                    <button className="btn btn-secondary" onClick={resetInspection}>
+                        <RotateCcw size={16} style={{ marginRight: '0.5rem' }} />
+                        Start New Inspection
+                    </button>
+
+                    {!actionsCreated ? (
+                        <button
+                            className="btn btn-primary"
+                            onClick={handleCreateActions}
+                            disabled={creatingActions || (session?.responses.filter(r => r.score < 3).length || 0) === 0}
+                            style={{ background: 'var(--color-accent)', borderColor: 'var(--color-accent)' }}
+                        >
+                            {creatingActions ? <Loader2 size={16} className="animate-spin" /> : <CheckSquare size={16} />}
+                            <span style={{ marginLeft: '0.5rem' }}>
+                                {creatingActions ? 'Generating Actions...' : 'Create Actions from Findings'}
+                            </span>
+                        </button>
+                    ) : (
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => navigate('/actions')}
+                            style={{ color: 'var(--color-accent)', borderColor: 'var(--color-accent)' }}
+                        >
+                            <ListChecks size={16} />
+                            <span style={{ marginLeft: '0.5rem' }}>View Tracked Actions</span>
+                        </button>
+                    )}
+
+                    <button className="btn btn-primary" disabled={saving}>
+                        {saving ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                        <span style={{ marginLeft: '0.5rem' }}>
+                            {saving ? 'Saving...' : 'Download Report'}
+                        </span>
+                    </button>
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     return (
         <div className="container" style={{ padding: '2rem 1rem', maxWidth: '1000px' }}>
@@ -1002,5 +1078,11 @@ ${r.improvements.length > 0 ? `- **Areas for Improvement:** ${r.improvements.joi
         </div>
     );
 };
+
+export const MockInspection = () => (
+    <ProductionErrorBoundary>
+        <MockInspectionContent />
+    </ProductionErrorBoundary>
+);
 
 export default MockInspection;

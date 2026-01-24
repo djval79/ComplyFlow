@@ -12,7 +12,7 @@ const corsHeaders = {
 }
 
 interface EmailRequest {
-    type: 'welcome' | 'payment_success' | 'payment_failed' | 'compliance_alert' | 'weekly_digest' | 'trial_expiring' | 'password_reset' | 'team_invite';
+    type: 'welcome' | 'payment_success' | 'payment_failed' | 'compliance_alert' | 'weekly_digest' | 'trial_expiring' | 'password_reset' | 'team_invite' | 'visa_expiry_alert';
     to: string;
     data: Record<string, any>;
 }
@@ -396,10 +396,115 @@ const EMAIL_TEMPLATES = {
             </body>
             </html>
         `
+    }),
+
+    payment_failed: (data: any) => ({
+        subject: '⚠️ Payment Failed – Action Required',
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; margin: 0; padding: 0; background: #f8fafc; }
+                    .container { max-width: 600px; margin: 0 auto; background: white; }
+                    .header { background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); padding: 40px 30px; text-align: center; }
+                    .header h1 { color: white; margin: 0; font-size: 28px; }
+                    .content { padding: 40px 30px; }
+                    .alert-box { background: #fef2f2; border-left: 4px solid #dc2626; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                    .btn { display: inline-block; background: #1e40af; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+                    .footer { background: #f1f5f9; padding: 30px; text-align: center; font-size: 14px; color: #64748b; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>❌ Payment Failed</h1>
+                    </div>
+                    <div class="content">
+                        <h2>We couldn't process your payment</h2>
+                        
+                        <div class="alert-box">
+                            <strong>Reason:</strong> ${data.reason || 'Your payment method was declined.'}
+                        </div>
+                        
+                        <p>Please update your payment method to avoid any interruption to your ComplyFlow subscription.</p>
+                        
+                        <p><strong>What happens next?</strong></p>
+                        <ul>
+                            <li>We'll retry the payment in 3 days</li>
+                            <li>Your access remains active during this time</li>
+                            <li>Update your payment method now to avoid issues</li>
+                        </ul>
+                        
+                        <a href="${data.billingUrl || 'https://complyflow.uk/settings/billing'}" class="btn">Update Payment Method →</a>
+                        
+                        <p style="font-size: 14px; color: #64748b; margin-top: 30px;">Need help? Reply to this email and we'll assist you.</p>
+                    </div>
+                    <div class="footer">
+                        <p>ComplyFlow by NovumSolvo Ltd</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    }),
+
+    visa_expiry_alert: (data: any) => ({
+        subject: `⚠️ Visa Expiry Alert: ${data.workerName || 'Staff Member'} (${data.daysRemaining} days remaining)`,
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1e293b; margin: 0; padding: 0; background: #f8fafc; }
+                    .container { max-width: 600px; margin: 0 auto; background: white; }
+                    .header { background: ${data.daysRemaining <= 30 ? '#dc2626' : '#f59e0b'}; padding: 40px 30px; text-align: center; }
+                    .header h1 { color: white; margin: 0; font-size: 28px; }
+                    .content { padding: 40px 30px; }
+                    .alert-box { background: ${data.daysRemaining <= 30 ? '#fef2f2' : '#fffbeb'}; border-left: 4px solid ${data.daysRemaining <= 30 ? '#dc2626' : '#f59e0b'}; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                    .btn { display: inline-block; background: #1e40af; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; margin: 20px 0; }
+                    .footer { background: #f1f5f9; padding: 30px; text-align: center; font-size: 14px; color: #64748b; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>🚨 Visa Expiry Alert</h1>
+                    </div>
+                    <div class="content">
+                        <h2>Action Required: Visa Renewal</h2>
+                        <p>This is an automated alert from ComplyFlow regarding a sponsored worker's visa status.</p>
+                        
+                        <div class="alert-box">
+                            <strong>Worker Name:</strong> ${data.workerName || 'N/A'}<br>
+                            <strong>Visa Type:</strong> ${data.visaType || 'N/A'}<br>
+                            <strong>Expiry Date:</strong> ${data.expiryDate || 'N/A'}<br>
+                            <strong>Status:</strong> <span style="color: ${data.daysRemaining <= 30 ? '#dc2626' : '#d97706'}; font-weight: bold;">Expires in ${data.daysRemaining} days</span>
+                        </div>
+                        
+                        <p><strong>Required Actions:</strong></p>
+                        <ul>
+                            <li>Contact the worker to confirm renewal plans</li>
+                            <li>Review Certificate of Sponsorship (CoS) allocation</li>
+                            <li>Update the reporting log once renewal is initiated</li>
+                        </ul>
+                        
+                        <a href="${data.dashboardUrl || 'https://complyflow.uk/sponsor-guardian'}" class="btn">View Worker Details →</a>
+                        
+                        <p style="font-size: 14px; color: #64748b; margin-top: 30px;">This is a critical compliance notification. Failure to manage visa expiries can lead to Sponsor Licence suspension.</p>
+                    </div>
+                    <div class="footer">
+                        <p>ComplyFlow by NovumSolvo Ltd</p>
+                        <p>Helping care homes stay CQC and Home Office compliant</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
     })
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
         return new Response("ok", { headers: corsHeaders })
     }
@@ -441,9 +546,10 @@ serve(async (req) => {
         )
 
     } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
         console.error('Email error:', error)
         return new Response(
-            JSON.stringify({ error: error.message }),
+            JSON.stringify({ error: errorMessage }),
             {
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
                 status: 500

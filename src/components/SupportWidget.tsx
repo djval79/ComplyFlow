@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { MessageCircle, X, Send, HelpCircle, FileText, Phone, Mail, ChevronRight, Loader2 } from 'lucide-react';
+import { MessageCircle, X, Send, HelpCircle, FileText, Phone, Mail, ChevronRight, Loader2, Search, ArrowLeft } from 'lucide-react';
+import { knowledgeBaseService } from '../services/knowledgeBaseService';
+import type { HelpArticle } from '../services/knowledgeBaseService';
 
 interface SupportWidgetProps {
     position?: 'bottom-right' | 'bottom-left';
@@ -8,17 +10,13 @@ interface SupportWidgetProps {
 export const SupportWidget: React.FC<SupportWidgetProps> = ({ position = 'bottom-right' }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [activeTab, setActiveTab] = useState<'help' | 'contact'>('help');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedArticle, setSelectedArticle] = useState<HelpArticle | null>(null);
     const [message, setMessage] = useState('');
     const [sending, setSending] = useState(false);
     const [sent, setSent] = useState(false);
 
-    const helpArticles = [
-        { title: 'Getting Started with Gap Analysis', category: 'Quick Start' },
-        { title: 'Understanding Your CQC Score', category: 'Compliance' },
-        { title: 'Preparing for Mock Inspections', category: 'Training' },
-        { title: 'Managing Sponsored Workers', category: 'Visa Tracking' },
-        { title: 'Upgrading Your Plan', category: 'Billing' }
-    ];
+    const filteredArticles = knowledgeBaseService.getArticles(searchQuery);
 
     const handleSendMessage = async () => {
         if (!message.trim()) return;
@@ -134,51 +132,135 @@ export const SupportWidget: React.FC<SupportWidgetProps> = ({ position = 'bottom
                     <div style={{ padding: '1rem', maxHeight: '320px', overflowY: 'auto' }}>
                         {activeTab === 'help' && (
                             <div>
-                                {helpArticles.map((article, i) => (
-                                    <div
-                                        key={i}
-                                        style={{
-                                            padding: '0.75rem',
-                                            borderRadius: '8px',
-                                            cursor: 'pointer',
-                                            marginBottom: '0.5rem',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            transition: 'background 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg-page)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                                    >
-                                        <div>
-                                            <div style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '0.125rem' }}>
-                                                {article.title}
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
-                                                {article.category}
-                                            </div>
-                                        </div>
-                                        <ChevronRight size={16} color="var(--color-text-tertiary)" />
-                                    </div>
-                                ))}
+                                {selectedArticle ? (
+                                    <div className="animate-enter">
+                                        <button
+                                            onClick={() => setSelectedArticle(null)}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                background: 'none',
+                                                border: 'none',
+                                                color: 'var(--color-primary)',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 600,
+                                                cursor: 'pointer',
+                                                marginBottom: '1rem',
+                                                padding: '0'
+                                            }}
+                                        >
+                                            <ArrowLeft size={16} /> Back to Search
+                                        </button>
 
-                                <div style={{
-                                    marginTop: '1rem',
-                                    padding: '1rem',
-                                    background: '#f0f9ff',
-                                    borderRadius: '8px',
-                                    border: '1px solid #bae6fd'
-                                }}>
-                                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0369a1', marginBottom: '0.375rem' }}>
-                                        📚 Knowledge Base
+                                        <h4 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '0.5rem' }}>{selectedArticle.title}</h4>
+                                        <div style={{
+                                            fontSize: '0.75rem',
+                                            background: '#f1f5f9',
+                                            color: '#64748b',
+                                            padding: '0.2rem 0.5rem',
+                                            borderRadius: '4px',
+                                            display: 'inline-block',
+                                            marginBottom: '1rem'
+                                        }}>
+                                            {selectedArticle.category}
+                                        </div>
+
+                                        <div
+                                            style={{
+                                                fontSize: '0.9rem',
+                                                lineHeight: 1.6,
+                                                color: 'var(--color-text-secondary)'
+                                            }}
+                                            dangerouslySetInnerHTML={{ __html: selectedArticle.content }}
+                                        />
                                     </div>
-                                    <p style={{ fontSize: '0.8rem', color: '#0284c7', marginBottom: '0.5rem' }}>
-                                        Browse our full documentation and CQC compliance guides.
-                                    </p>
-                                    <a href="#" style={{ fontSize: '0.8rem', color: '#0ea5e9', fontWeight: 600 }}>
-                                        View All Articles →
-                                    </a>
-                                </div>
+                                ) : (
+                                    <>
+                                        {/* Search Bar */}
+                                        <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                                            <Search
+                                                size={16}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: '0.75rem',
+                                                    top: '50%',
+                                                    transform: 'translateY(-50%)',
+                                                    color: 'var(--color-text-tertiary)'
+                                                }}
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="Search help articles..."
+                                                value={searchQuery}
+                                                onChange={(e) => setSearchQuery(e.target.value)}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '0.625rem 0.75rem 0.625rem 2.5rem',
+                                                    fontSize: '0.85rem',
+                                                    border: '1px solid var(--color-border)',
+                                                    borderRadius: '8px',
+                                                    outline: 'none',
+                                                    background: '#f8fafc'
+                                                }}
+                                            />
+                                        </div>
+
+                                        {filteredArticles.length > 0 ? (
+                                            filteredArticles.map((article, i) => (
+                                                <div
+                                                    key={article.id}
+                                                    onClick={() => setSelectedArticle(article)}
+                                                    style={{
+                                                        padding: '0.75rem',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        marginBottom: '0.5rem',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        transition: 'background 0.2s'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--color-bg-page)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                                                >
+                                                    <div>
+                                                        <div style={{ fontSize: '0.9rem', fontWeight: 500, marginBottom: '0.125rem' }}>
+                                                            {article.title}
+                                                        </div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)' }}>
+                                                            {article.category}
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight size={16} color="var(--color-text-tertiary)" />
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div style={{ textAlign: 'center', padding: '2rem 1rem', color: 'var(--color-text-tertiary)' }}>
+                                                <Search size={32} style={{ opacity: 0.2, marginBottom: '0.5rem' }} />
+                                                <p style={{ fontSize: '0.85rem' }}>No articles found for "{searchQuery}"</p>
+                                            </div>
+                                        )}
+
+                                        <div style={{
+                                            marginTop: '1rem',
+                                            padding: '1rem',
+                                            background: '#f0f9ff',
+                                            borderRadius: '8px',
+                                            border: '1px solid #bae6fd'
+                                        }}>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0369a1', marginBottom: '0.375rem' }}>
+                                                📚 Knowledge Base
+                                            </div>
+                                            <p style={{ fontSize: '0.8rem', color: '#0284c7', marginBottom: '0.5rem' }}>
+                                                Browse our full documentation and CQC compliance guides.
+                                            </p>
+                                            <a href="#" style={{ fontSize: '0.8rem', color: '#0ea5e9', fontWeight: 600 }}>
+                                                View All Articles →
+                                            </a>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         )}
 

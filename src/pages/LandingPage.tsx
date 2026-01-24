@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Shield, CheckCircle, ArrowRight, Star, Users, FileText,
-    Clock, TrendingUp, Zap, Award, ChevronRight, Play, Globe
+    Clock, TrendingUp, Zap, Award, ChevronRight, Play, Globe, X
 } from 'lucide-react';
+import { abTestService, AB_TESTS } from '../lib/abTest';
+import { LeadMagnet } from '../components/LeadMagnet';
+import { ProductWalkthrough } from '../components/ProductWalkthrough';
 
 const features = [
     {
@@ -41,17 +44,53 @@ const stats = [
 
 export const LandingPage: React.FC = () => {
     const navigate = useNavigate();
+    const variant = abTestService.getVariant(AB_TESTS.LANDING_PAGE_HERO);
+
+    React.useEffect(() => {
+        // Track that the landing page was viewed with this variant
+        abTestService.trackView(AB_TESTS.LANDING_PAGE_HERO);
+    }, []);
+
+    const handleSignup = () => {
+        // Track conversion event
+        abTestService.trackConversion('lp_conversion', AB_TESTS.LANDING_PAGE_HERO, {
+            location: 'hero'
+        });
+        navigate('/signup');
+    };
+
+    const [showVideo, setShowVideo] = useState(false);
+
+    const heroContent = {
+        control: {
+            title: <>Compliance Without <br /><span className="gradient-text">The Complexity.</span></>,
+            description: "Stay CQC-Ready, 24/7. ComplyFlow is the AI shield that spots policy gaps instantly and protects your Sponsor License from Home Office violations."
+        },
+        'test-a': {
+            title: <>Protect Your Rating. <br /><span className="gradient-text">Automate Your Compliance.</span></>,
+            description: "The only AI assistant that identifies policy gaps before CQC does. Join 147+ care homes reducing stress and ensuring safety today."
+        },
+        'test-b': {
+            title: <>Your CQC Partner. <br /><span className="gradient-text">Always Inspection Ready.</span></>,
+            description: "AI-powered compliance that works 24/7. Identify risks early, maintain evidence, and approach every inspection with confidence."
+        }
+    }[variant] || {
+        title: <>Compliance Without <br /><span className="gradient-text">The Complexity.</span></>,
+        description: "Stay CQC-Ready, 24/7. ComplyFlow is the AI shield that spots policy gaps instantly and protects your Sponsor License from Home Office violations."
+    };
 
     return (
         <div style={{ background: 'var(--color-bg-page)', minHeight: '100vh' }}>
             {/* Navigation */}
             <nav style={{
-                padding: '1rem 2rem',
+                padding: '1rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 maxWidth: '1200px',
-                margin: '0 auto'
+                margin: '0 auto',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <div style={{
@@ -65,11 +104,11 @@ export const LandingPage: React.FC = () => {
                     </div>
                     <span style={{ fontWeight: 700, fontSize: '1.25rem', color: 'var(--color-primary)' }}>ComplyFlow</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <button onClick={() => navigate('/login')} className="btn btn-secondary">
                         Sign In
                     </button>
-                    <button onClick={() => navigate('/signup')} className="btn btn-primary">
+                    <button onClick={handleSignup} className="btn btn-primary">
                         Start Free Trial
                     </button>
                 </div>
@@ -109,8 +148,7 @@ export const LandingPage: React.FC = () => {
                     margin: '0 auto 1.5rem auto',
                     letterSpacing: '-0.02em'
                 }}>
-                    Compliance Without <br />
-                    <span className="gradient-text">The Complexity.</span>
+                    {heroContent.title}
                 </h1>
 
                 <p style={{
@@ -120,12 +158,12 @@ export const LandingPage: React.FC = () => {
                     margin: '0 auto 2.5rem auto',
                     lineHeight: 1.6
                 }}>
-                    Stay CQC-Ready, 24/7. ComplyFlow is the AI shield that spots policy gaps instantly and protects your Sponsor License from Home Office violations.
+                    {heroContent.description}
                 </p>
 
                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
                     <button
-                        onClick={() => navigate('/signup')}
+                        onClick={handleSignup}
                         className="btn btn-primary"
                         style={{
                             padding: '1rem 2.5rem',
@@ -157,6 +195,15 @@ export const LandingPage: React.FC = () => {
                     <span style={{ color: '#10b981', fontWeight: 600 }}>✓</span> No credit card required &nbsp;
                     <span style={{ color: '#10b981', fontWeight: 600 }}>✓</span> Cancel anytime
                 </p>
+            </section>
+
+            {/* Product Tour Section */}
+            <section style={{
+                padding: '4rem 2rem',
+                maxWidth: '1200px',
+                margin: '0 auto'
+            }}>
+                <ProductWalkthrough />
             </section>
 
             {/* Stats Bar */}
@@ -300,7 +347,7 @@ export const LandingPage: React.FC = () => {
                 </p>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                     <button
-                        onClick={() => navigate('/signup')}
+                        onClick={handleSignup}
                         className="btn"
                         style={{
                             background: 'white',
@@ -328,6 +375,11 @@ export const LandingPage: React.FC = () => {
                     >
                         Login
                     </button>
+                </div>
+
+                {/* Lead Magnet */}
+                <div style={{ marginTop: '3rem', maxWidth: '500px', margin: '3rem auto 0' }}>
+                    <LeadMagnet />
                 </div>
             </section>
 

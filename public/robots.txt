@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /setup
+Disallow: /cqc/
+Disallow: /settings
+Disallow: /sponsor
+Disallow: /governance
+Disallow: /trend-watchdog
+Disallow: /intelligence-hub
+Disallow: /actions
+Disallow: /rota
+
+Sitemap: https://complyflow.co.uk/sitemap.xml

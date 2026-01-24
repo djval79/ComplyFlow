@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, User, Building2, AlertCircle, Loader2, Shield, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 export const Signup = () => {
     const navigate = useNavigate();
@@ -17,20 +18,37 @@ export const Signup = () => {
     const [loading, setLoading] = useState(false);
     const [searchParams] = useSearchParams();
     const [success, setSuccess] = useState(false);
-    const [inviteData, setInviteData] = useState<{ orgId: string, email: string, role: string } | null>(null);
+    const [inviteInfo, setInviteInfo] = useState<{ token: string, email: string, role: string, orgName: string } | null>(null);
 
     React.useEffect(() => {
-        const inviteCode = searchParams.get('invite');
-        if (inviteCode) {
-            try {
-                const decoded = JSON.parse(atob(inviteCode));
-                if (decoded.email && decoded.orgId) {
-                    setInviteData(decoded);
-                    setFormData(prev => ({ ...prev, email: decoded.email }));
+        const token = searchParams.get('token');
+        const emailParam = searchParams.get('email');
+
+        if (token) {
+            const verifyInvite = async () => {
+                const { data, error } = await supabase
+                    .from('team_invitations')
+                    .select('*, organizations(name)')
+                    .eq('token', token)
+                    .eq('status', 'pending')
+                    .single();
+
+                if (data && !error) {
+                    setInviteInfo({
+                        token,
+                        email: data.email,
+                        role: data.role,
+                        orgName: data.organizations?.name || 'Your Organization'
+                    });
+                    setFormData(prev => ({ ...prev, email: data.email }));
+                } else {
+                    console.error('Invalid or expired invitation token');
+                    setError('This invitation link is invalid or has expired.');
                 }
-            } catch (error) {
-                console.error('Invalid invite code', error);
-            }
+            };
+            verifyInvite();
+        } else if (emailParam) {
+            setFormData(prev => ({ ...prev, email: emailParam }));
         }
     }, [searchParams]);
 
@@ -59,15 +77,23 @@ export const Signup = () => {
             formData.email,
             formData.password,
             formData.fullName,
-            inviteData ? 'Joined Organization' : formData.organizationName, // Name ignored if joining existing org
-            inviteData?.orgId,
-            inviteData?.role
+            inviteInfo ? inviteInfo.orgName : formData.organizationName,
+            undefined, // orgId ignored if inviteToken is present
+            inviteInfo?.role,
+            inviteInfo?.token
         );
 
         if (error) {
             setError(error.message);
             setLoading(false);
         } else {
+            // Track in Analytics
+            import('../lib/posthog').then(({ captureEvent }) => {
+                captureEvent('signup_completed', {
+                    method: 'email',
+                    is_invite: !!inviteInfo
+                });
+            });
             setSuccess(true);
         }
     };
@@ -106,17 +132,17 @@ export const Signup = () => {
                     <div className="auth-logo">
                         <Shield size={32} />
                     </div>
-                    <h1>{inviteData ? 'Join Your Team' : 'Start Free Trial'}</h1>
-                    <p>{inviteData ? 'Create your account to access the team workspace' : '14 days free, no credit card required'}</p>
+                    <h1>{inviteInfo ? `Join ${inviteInfo.orgName}` : 'Start Free Trial'}</h1>
+                    <p>{inviteInfo ? 'Create your account to access the team workspace' : '14 days free, no credit card required'}</p>
                 </div>
 
                 {/* Invite Banner */}
-                {inviteData && (
+                {inviteInfo && (
                     <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.75rem', borderRadius: '8px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <CheckCircle size={20} color="#16a34a" />
                         <div>
-                            <strong style={{ display: 'block', color: '#166534', fontSize: '0.9rem' }}>Invitation Accepted</strong>
-                            <span style={{ fontSize: '0.8rem', color: '#15803d' }}>You are joining an existing organization.</span>
+                            <strong style={{ display: 'block', color: '#166534', fontSize: '0.9rem' }}>Invitation Verified</strong>
+                            <span style={{ fontSize: '0.8rem', color: '#15803d' }}>You are joining <strong>{inviteInfo.orgName}</strong> as an {inviteInfo.role}.</span>
                         </div>
                     </div>
                 )}
@@ -163,13 +189,13 @@ export const Signup = () => {
 
                         <div className="form-group">
                             <label htmlFor="organizationName">Organisation Name</label>
-                            {inviteData ? (
+                            {inviteInfo ? (
                                 <div className="input-with-icon" style={{ opacity: 0.7, background: '#f8fafc' }}>
                                     <Building2 size={18} className="input-icon" />
                                     <input
                                         type="text"
                                         className="form-input"
-                                        value="Joining Existing Org"
+                                        value={inviteInfo.orgName}
                                         disabled
                                         style={{ cursor: 'not-allowed' }}
                                     />

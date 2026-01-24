@@ -28,13 +28,26 @@ serve(async (req: Request) => {
         // You would need to create these in your Stripe Dashboard
         const priceMap: Record<string, string> = {
             "tier_pro": "price_1Sgy5ADNJV8utFweXurMAsdp", // Professional (£49)
-            "tier_enterprise": "price_1Sgy8qDNJV8utFwePL5nmeFH" // Corporate (Custom)
+            "tier_enterprise": "price_1Sgy8qDNJV8utFwePL5nmeFH", // Corporate (Custom)
+            "offer_gap_analysis": "price_1SgyBADNJV8utFweG8F1W4Gq", // Single Analysis (£29)
+            "offer_sponsor_audit": "price_1SgyE6DNJV8utFwe2vF7G9Yp" // Sponsor Audit (£149)
         }
 
         const priceId = priceMap[tierId]
 
         if (!priceId) {
-            throw new Error(`Invalid plan tier: ${tierId}`)
+            throw new Error(`Invalid product ID: ${tierId}`)
+        }
+
+        const isSubscription = tierId.startsWith('tier_')
+        const metadata: any = {
+            organization_id: organizationId,
+        }
+
+        if (isSubscription) {
+            metadata.plan_tier = tierId.replace("tier_", "")
+        } else {
+            metadata.purchase_type = tierId.replace("offer_", "")
         }
 
         const session = await stripe.checkout.sessions.create({
@@ -45,13 +58,10 @@ serve(async (req: Request) => {
                     quantity: 1,
                 },
             ],
-            mode: "subscription",
+            mode: isSubscription ? "subscription" : "payment",
             customer_email: userEmail,
-            metadata: {
-                organization_id: organizationId,
-                plan_tier: tierId.replace("tier_", "")
-            },
-            success_url: `${req.headers.get("origin")}/dashboard?payment=success`,
+            metadata,
+            success_url: `${req.headers.get("origin")}/dashboard?payment=success&type=${isSubscription ? 'subscription' : 'purchase'}`,
             cancel_url: `${req.headers.get("origin")}/pricing?payment=cancelled`,
         })
 

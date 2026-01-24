@@ -1,9 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ComplianceProvider } from './context/ComplianceContext';
 import { ToastProvider } from './components/ToastProvider';
 import { SupportWidget } from './components/SupportWidget';
+import { ProductionErrorBoundary } from './components/ProductionErrorBoundary';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { Onboarding } from './pages/Onboarding';
@@ -21,9 +23,17 @@ import { CQCAdvisor } from './pages/CQCAdvisor';
 import { GovernanceDashboard } from './pages/Governance';
 import { Pricing } from './pages/Pricing';
 import { Settings } from './pages/Settings';
+import { CQCExport } from './pages/CQCExport';
+import { EvidenceVault } from './pages/EvidenceVault'; // Re-saved to trigger indexing
 import { LandingPage } from './pages/LandingPage';
+import { IntelligenceHub } from './pages/IntelligenceHub';
 import { Terms } from './pages/Terms';
 import { Privacy } from './pages/Privacy';
+import { Actions } from './pages/Actions';
+import { TrendWatchdog } from './pages/TrendWatchdog';
+import { StaffHeatmap } from './pages/StaffHeatmap';
+import { SmartRota } from './pages/SmartRota';
+import { CookieConsent } from './components/CookieConsent';
 
 // ============ LOADING SCREEN ============
 function LoadingScreen() {
@@ -50,6 +60,19 @@ function LoadingScreen() {
       </div>
     </div>
   );
+}
+
+// ============ ANALYTICS TRACKER ============
+function PageTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    import('./lib/posthog').then(({ captureEvent }) => {
+      captureEvent('$pageview');
+    });
+  }, [location]);
+
+  return null;
 }
 
 // ============ PROTECTED ROUTE ============
@@ -105,25 +128,38 @@ function AppRoutes() {
       />
       <Route path="/terms" element={<Terms />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route path="/templates" element={<TemplateLibrary />} />
+      <Route path="/resources" element={<RegulatoryIntelligence />} />
+      {/* Blog Alias for SEO */}
+      <Route path="/blog" element={<RegulatoryIntelligence />} />
 
       {/* Protected routes */}
       <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
+        <Route element={
+          <ProductionErrorBoundary>
+            <AppLayout />
+          </ProductionErrorBoundary>
+        }>
           <Route path="/setup" element={<Onboarding />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/cqc/gap-analysis" element={<GapAnalyzer />} />
+          <Route path="/cqc/export" element={<CQCExport />} />
+          <Route path="/cqc/evidence-vault" element={<EvidenceVault />} />
           <Route path="/cqc/advisor" element={<CQCAdvisor />} />
           <Route path="/cqc/gap-analyzer" element={<Navigate to="/cqc/gap-analysis" replace />} />
           <Route path="/cqc" element={<Navigate to="/cqc/gap-analysis" replace />} />
           <Route path="/sponsor" element={<SponsorGuardian />} />
-          <Route path="/resources" element={<RegulatoryIntelligence />} />
-          <Route path="/templates" element={<TemplateLibrary />} />
           <Route path="/cqc/simulator" element={<InspectionSimulator />} />
           <Route path="/cqc/mock-inspection" element={<MockInspection />} />
           <Route path="/cqc/interview-training" element={<InterviewTraining />} />
           <Route path="/cqc/visiting-rights" element={<VisitingRights />} />
           <Route path="/governance" element={<GovernanceDashboard />} />
+          <Route path="/actions" element={<Actions />} />
+          <Route path="/trend-watchdog" element={<TrendWatchdog />} />
+          <Route path="/training/heatmap" element={<StaffHeatmap />} />
+          <Route path="/rota" element={<SmartRota />} />
           <Route path="/training/evisa" element={<TrainingEVisa />} />
+          <Route path="/intelligence-hub" element={<IntelligenceHub />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
@@ -141,16 +177,20 @@ function AppRoutes() {
 // ============ MAIN APP ============
 function App() {
   return (
-    <AuthProvider>
-      <ComplianceProvider>
-        <ToastProvider>
-          <BrowserRouter>
-            <AppRoutes />
-            <SupportWidget />
-          </BrowserRouter>
-        </ToastProvider>
-      </ComplianceProvider>
-    </AuthProvider>
+    <ProductionErrorBoundary>
+      <AuthProvider>
+        <ComplianceProvider>
+          <ToastProvider>
+            <BrowserRouter>
+              <PageTracker />
+              <AppRoutes />
+              <SupportWidget />
+              <CookieConsent />
+            </BrowserRouter>
+          </ToastProvider>
+        </ComplianceProvider>
+      </AuthProvider>
+    </ProductionErrorBoundary>
   );
 }
 

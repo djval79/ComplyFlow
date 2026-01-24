@@ -1,16 +1,26 @@
 import React from 'react';
 import { Check, Star, Shield, Zap, Briefcase, Loader2 } from 'lucide-react';
-import { SUBSCRIPTION_TIERS } from '../lib/subscriptionData';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCompliance } from '../context/ComplianceContext';
 import { supabase } from '../lib/supabase';
+import { toast } from 'react-hot-toast';
+import { SUBSCRIPTION_TIERS, STANDALONE_OFFERS } from '../lib/subscriptionData';
 
 export const Pricing = () => {
     const navigate = useNavigate();
+    const location = useLocation();
     const { user, profile, isDemo } = useAuth();
     const { companyName } = useCompliance();
     const [loadingTier, setLoadingTier] = React.useState<string | null>(null);
+
+    React.useEffect(() => {
+        const query = new URLSearchParams(location.search);
+        if (query.get('payment') === 'cancelled') {
+            toast.error('Payment cancelled. No charges were made.');
+            navigate('/pricing', { replace: true });
+        }
+    }, [location.search, navigate]);
 
     const handleSubscribe = async (tier: any) => {
         // Prevent subscription in Demo Mode
@@ -44,9 +54,9 @@ export const Pricing = () => {
         }
 
         setLoadingTier(tier.id);
-        console.log(`[Pricing] Starting checkout session for tier: ${tier.id}, org: ${orgId}`);
 
         try {
+            // Starting checkout session
             const { data, error } = await supabase.functions.invoke('create-checkout-session', {
                 body: {
                     tierId: tier.id,
@@ -62,7 +72,7 @@ export const Pricing = () => {
             }
 
             if (data?.url) {
-                console.log('[Pricing] Redirecting to Stripe:', data.url);
+                // Redirecting to Stripe
                 window.location.href = data.url;
             } else {
                 console.error('[Pricing] No checkout URL returned from function', data);
@@ -159,6 +169,45 @@ export const Pricing = () => {
                         </button>
                     </div>
                 ))}
+            </div>
+
+            {/* Standalone Strategic Offers (CEO Growth Levers) */}
+            <div style={{ marginTop: '6rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+                    <h2 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.5rem' }}>One-Off Compliance Solutions</h2>
+                    <p style={{ color: 'var(--color-text-secondary)', fontSize: '1.1rem' }}>No subscription required. Pay only for what you need.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8" style={{ maxWidth: '900px', margin: '0 auto' }}>
+                    {STANDALONE_OFFERS.map((offer) => (
+                        <div key={offer.id} className="card" style={{ display: 'flex', flexDirection: 'column', background: 'linear-gradient(135deg, white 0%, #f8fafc 100%)', border: '1px dashed var(--color-border)' }}>
+                            <div style={{ marginBottom: '1.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                    <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{offer.name}</h3>
+                                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-primary)' }}>{offer.price}</span>
+                                </div>
+                                <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem' }}>{offer.description}</p>
+                            </div>
+
+                            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 2rem 0', display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+                                {offer.features.map((feat, i) => (
+                                    <li key={i} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
+                                        <Zap size={14} color="var(--color-accent)" style={{ marginTop: '2px' }} />
+                                        {feat}
+                                    </li>
+                                ))}
+                            </ul>
+
+                            <button
+                                className="btn btn-secondary"
+                                style={{ width: '100%', justifyContent: 'center', borderColor: 'var(--color-accent)', color: 'var(--color-accent)' }}
+                                onClick={() => handleSubscribe(offer)}
+                            >
+                                {offer.cta}
+                            </button>
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {/* Social Proof Strip */}

@@ -240,11 +240,33 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
     new_org_id UUID;
+    invite_role TEXT;
+    invite_token TEXT;
 BEGIN
-    -- Create a new organization for the user
-    INSERT INTO public.organizations (name)
-    VALUES (COALESCE(NEW.raw_user_meta_data->>'organization_name', 'My Organization'))
-    RETURNING id INTO new_org_id;
+    -- Check if user is signing up through an invitation
+    invite_token := NEW.raw_user_meta_data->>'invite_token';
+
+    IF invite_token IS NOT NULL THEN
+        -- Find the invitation
+        SELECT organization_id, role INTO new_org_id, invite_role
+        FROM public.team_invitations
+        WHERE token = invite_token AND status = 'pending' AND expires_at > NOW();
+
+        IF new_org_id IS NOT NULL THEN
+            -- Update invitation status
+            UPDATE public.team_invitations
+            SET status = 'accepted'
+            WHERE token = invite_token;
+        END IF;
+    END IF;
+
+    -- If no valid invitation, create a new organization
+    IF new_org_id IS NULL THEN
+        INSERT INTO public.organizations (name)
+        VALUES (COALESCE(NEW.raw_user_meta_data->>'organization_name', 'My Organization'))
+        RETURNING id INTO new_org_id;
+        invite_role := 'owner';
+    END IF;
 
     -- Create the user's profile
     INSERT INTO public.profiles (id, email, full_name, organization_id, role)
@@ -253,7 +275,7 @@ BEGIN
         NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'full_name', 'User'),
         new_org_id,
-        'owner'
+        invite_role
     );
 
     RETURN NEW;

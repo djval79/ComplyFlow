@@ -23,13 +23,18 @@ export const Settings = () => {
     const [teamMembers, setTeamMembers] = useState<any[]>([]);
     const [loadingTeam, setLoadingTeam] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
     const [inviting, setInviting] = useState(false);
+    const [pendingInvites, setPendingInvites] = useState<any[]>([]);
 
     // Enterprise State
     const [apiKey, setApiKey] = useState<string | null>(null);
     const [ssoConfig, setSsoConfig] = useState({ enabled: false, entityId: '', ssoUrl: '', cert: '' });
     const [knowledgeBaseFiles, setKnowledgeBaseFiles] = useState<any[]>([]);
     const [uploadingKB, setUploadingKB] = useState(false);
+    const [exportingData, setExportingData] = useState(false);
+    const [billingInvoices, setBillingInvoices] = useState<any[]>([]);
+    const [loadingInvoices, setLoadingInvoices] = useState(false);
 
     // const isEnterprise = profile?.subscription_tier === 'tier_enterprise' || isDemo;
     const isEnterprise = true; // FORCE ENABLE FOR DEMO
@@ -40,8 +45,11 @@ export const Settings = () => {
 
         if (activeTab === 'organization') {
             fetchTeam();
+            fetchInvites();
         } else if (activeTab === 'enterprise' && isEnterprise) {
             fetchEnterpriseSettings();
+        } else if (activeTab === 'billing') {
+            fetchBillingInvoices();
         }
     }, [activeTab, profile?.organization_id, isEnterprise]);
 
@@ -50,10 +58,36 @@ export const Settings = () => {
         const { data } = await supabase
             .from('profiles')
             .select('*')
-            .eq('organization_id', profile?.organization_id);
+            .eq('organization_id', profile?.organization_id)
+            .order('full_name', { ascending: true });
 
         if (data) setTeamMembers(data);
         setLoadingTeam(false);
+    };
+
+    const fetchInvites = async () => {
+        const { data } = await supabase
+            .from('team_invitations')
+            .select('*')
+            .eq('organization_id', profile?.organization_id)
+            .eq('status', 'pending');
+
+        if (data) setPendingInvites(data);
+    };
+
+    const fetchBillingInvoices = async () => {
+        setLoadingInvoices(true);
+        const { data, error } = await supabase
+            .from('billing_invoices')
+            .select('*')
+            .eq('organization_id', profile?.organization_id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        if (!error && data) {
+            setBillingInvoices(data);
+        }
+        setLoadingInvoices(false);
     };
 
     const fetchEnterpriseSettings = async () => {
@@ -112,23 +146,61 @@ export const Settings = () => {
 
     const handleInvite = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inviteEmail) return;
+        if (!inviteEmail || !profile?.organization_id) return;
         setInviting(true);
         try {
-            await sendTeamInviteEmail(
+            // 1. Create invitation in DB
+            const { data: inviteData, error: inviteError } = await supabase
+                .from('team_invitations')
+                .insert({
+                    organization_id: profile.organization_id,
+                    email: inviteEmail,
+                    role: inviteRole,
+                    invited_by: profile.id
+                })
+                .select()
+                .single();
+
+            if (inviteError) {
+                if (inviteError.code === '23505') throw new Error('An invitation for this email already exists.');
+                throw inviteError;
+            }
+
+            // 2. Send email
+            const inviteUrl = `${window.location.origin}/signup?token=${inviteData.token}&email=${encodeURIComponent(inviteEmail)}`;
+
+            const success = await sendTeamInviteEmail(
                 inviteEmail,
                 profile?.full_name || 'The Manager',
                 companyName || 'Our Care Home',
-                'Staff Member',
-                `${window.location.origin}/signup`
+                inviteRole === 'admin' ? 'Administrator' : 'Staff Member',
+                inviteUrl
             );
-            alert(`Invitation sent to ${inviteEmail}`);
-            setInviteEmail('');
-        } catch (error) {
+
+            if (success) {
+                alert(`Invitation sent to ${inviteEmail}`);
+                setInviteEmail('');
+                fetchInvites();
+            } else {
+                throw new Error('Database record created, but failed to send email.');
+            }
+        } catch (error: any) {
             console.error('Invite error:', error);
-            alert('Failed to send invitation');
+            alert(error.message || 'Failed to send invitation');
         } finally {
             setInviting(false);
+        }
+    };
+
+    const handleRevokeInvite = async (inviteId: string) => {
+        if (!window.confirm('Revoke this invitation?')) return;
+        const { error } = await supabase
+            .from('team_invitations')
+            .delete()
+            .eq('id', inviteId);
+
+        if (!error) {
+            setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
         }
     };
 
@@ -179,6 +251,23 @@ export const Settings = () => {
             alert('Failed to save SSO config.');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const [loadingPortal, setLoadingPortal] = useState(false);
+    const handleManageBilling = async () => {
+        setLoadingPortal(true);
+        try {
+            const { data, error } = await supabase.functions.invoke('create-portal-session');
+            if (error) throw error;
+            if (data?.url) {
+                window.location.href = data.url;
+            }
+        } catch (err) {
+            console.error('Portal error:', err);
+            alert(err instanceof Error ? err.message : 'Failed to open billing portal');
+        } finally {
+            setLoadingPortal(false);
         }
     };
 
@@ -238,11 +327,21 @@ export const Settings = () => {
     };
 
     const currentPlan = isEnterprise ? SUBSCRIPTION_TIERS.find(t => t.id === 'tier_enterprise')! : SUBSCRIPTION_TIERS[0];
-    const billingHistory = [
-        { date: '2025-01-01', description: 'Professional Plan - Monthly', amount: '£49.00', status: 'Paid' },
-        { date: '2024-12-01', description: 'Professional Plan - Monthly', amount: '£49.00', status: 'Paid' },
-        { date: '2024-11-01', description: 'Professional Plan - Monthly', amount: '£49.00', status: 'Paid' }
-    ];
+
+    // Use real invoices if available, otherwise show mock data
+    const billingHistory = billingInvoices.length > 0
+        ? billingInvoices.map(inv => ({
+            date: new Date(inv.created_at).toLocaleDateString('en-GB'),
+            description: `Invoice #${inv.invoice_number || 'N/A'}`,
+            amount: `£${((inv.amount_paid || 0) / 100).toFixed(2)}`,
+            status: inv.status === 'paid' ? 'Paid' : inv.status,
+            pdfUrl: inv.invoice_pdf_url
+        }))
+        : [
+            { date: '2026-01-01', description: 'Professional Plan - Monthly', amount: '£49.00', status: 'Paid', pdfUrl: null },
+            { date: '2025-12-01', description: 'Professional Plan - Monthly', amount: '£49.00', status: 'Paid', pdfUrl: null },
+            { date: '2025-11-01', description: 'Professional Plan - Monthly', amount: '£49.00', status: 'Paid', pdfUrl: null }
+        ];
 
     const handleSaveProfile = async () => {
         setSaving(true);
@@ -250,6 +349,97 @@ export const Settings = () => {
         await new Promise(r => setTimeout(r, 1000));
         setSaving(false);
         alert('Profile saved successfully!');
+    };
+
+    // GDPR Data Export
+    const handleExportData = async () => {
+        if (!profile?.id) return;
+        setExportingData(true);
+
+        try {
+            const exportData: Record<string, any> = {
+                exportedAt: new Date().toISOString(),
+                exportVersion: '1.0',
+                user: {}
+            };
+
+            // 1. User Profile
+            const { data: profileData } = await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', profile.id)
+                .single();
+
+            if (profileData) {
+                exportData.user = {
+                    id: profileData.id,
+                    email: profileData.email,
+                    fullName: profileData.full_name,
+                    role: profileData.role,
+                    createdAt: profileData.created_at
+                };
+            }
+
+            // 2. Organization (if owner/admin)
+            if (profile.organization_id) {
+                const { data: orgData } = await supabase
+                    .from('organizations')
+                    .select('name, subscription_tier, created_at')
+                    .eq('id', profile.organization_id)
+                    .single();
+
+                if (orgData) {
+                    exportData.organization = orgData;
+                }
+            }
+
+            // 3. Compliance Activities
+            const { data: complianceData } = await supabase
+                .from('compliance_checks')
+                .select('*')
+                .eq('organization_id', profile.organization_id)
+                .order('created_at', { ascending: false })
+                .limit(100);
+
+            exportData.complianceActivities = complianceData || [];
+
+            // 4. Training Records
+            const { data: trainingData } = await supabase
+                .from('training_completions')
+                .select('*')
+                .eq('user_id', profile.id)
+                .order('completed_at', { ascending: false });
+
+            exportData.trainingRecords = trainingData || [];
+
+            // 5. Cookie Preferences (from localStorage)
+            const cookieConsent = localStorage.getItem('complyflow_cookie_consent');
+            if (cookieConsent) {
+                try {
+                    exportData.cookiePreferences = JSON.parse(cookieConsent);
+                } catch {
+                    exportData.cookiePreferences = null;
+                }
+            }
+
+            // Generate and download JSON file
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `complyflow_data_export_${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            alert('Your data has been exported successfully!');
+        } catch (error) {
+            console.error('Export error:', error);
+            alert('Failed to export data. Please try again.');
+        } finally {
+            setExportingData(false);
+        }
     };
 
     const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; hidden?: boolean }[] = [
@@ -262,370 +452,455 @@ export const Settings = () => {
     ];
 
     return (
-        <div className="container animate-enter" style={{ padding: '2rem 1rem' }}>
-            <h1 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '2rem' }}>Settings</h1>
+        <>
+            <div className="container animate-enter" style={{ padding: '2rem 1rem' }}>
+                <h1 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '2rem' }}>Settings</h1>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: '2rem' }}>
-                <div className="card" style={{ padding: '0.5rem', height: 'fit-content' }}>
-                    <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                        {tabs.filter(t => !t.hidden).map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.75rem',
-                                    padding: '0.75rem 1rem',
-                                    background: activeTab === tab.id ? 'var(--color-accent-subtle)' : 'transparent',
-                                    color: activeTab === tab.id ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    cursor: 'pointer',
-                                    fontSize: '0.9rem',
-                                    fontWeight: activeTab === tab.id ? 600 : 500,
-                                    textAlign: 'left',
-                                    width: '100%',
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                {tab.icon}
-                                {tab.label}
-                            </button>
-                        ))}
-                    </nav>
-                </div>
-
-                <div>
-                    {activeTab === 'profile' && (
-                        <div className="card">
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Profile Information</h2>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '400px' }}>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Full Name</label>
-                                    <input type="text" className="form-input" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Email Address</label>
-                                    <input type="email" className="form-input" value={formData.email} disabled style={{ background: 'var(--color-bg-page)' }} />
-                                    <p style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', marginTop: '0.375rem' }}>Contact support to change your email address</p>
-                                </div>
-                                <button onClick={handleSaveProfile} className="btn btn-primary" disabled={saving} style={{ width: 'fit-content' }}>
-                                    {saving ? <><Loader2 size={16} className="spin" /> Saving...</> : 'Save Changes'}
+                <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: '2rem' }}>
+                    <div className="card" style={{ padding: '0.5rem', height: 'fit-content' }}>
+                        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            {tabs.filter(t => !t.hidden).map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => setActiveTab(tab.id)}
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '0.75rem',
+                                        padding: '0.75rem 1rem',
+                                        background: activeTab === tab.id ? 'var(--color-accent-subtle)' : 'transparent',
+                                        color: activeTab === tab.id ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9rem',
+                                        fontWeight: activeTab === tab.id ? 600 : 500,
+                                        textAlign: 'left',
+                                        width: '100%',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {tab.icon}
+                                    {tab.label}
                                 </button>
-                            </div>
-                        </div>
-                    )}
+                            ))}
+                        </nav>
+                    </div>
 
-                    {activeTab === 'organization' && (
-                        <div className="card">
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Organization Details</h2>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '400px' }}>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Company Name</label>
-                                    <input type="text" className="form-input" value={companyName || profile?.organization_name || 'My Organization'} disabled style={{ background: 'var(--color-bg-page)' }} />
-                                </div>
-                                <div>
-                                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Your Role</label>
-                                    <input type="text" className="form-input" value={profile?.role || 'owner'} disabled style={{ background: 'var(--color-bg-page)', textTransform: 'capitalize' }} />
-                                </div>
-                            </div>
-                            <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--color-border)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                                    <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Team Members ({teamMembers.length})</h3>
-                                    {isDemo && <span className="badge badge-warning">Demo Mode</span>}
-                                </div>
-                                <form onSubmit={handleInvite} style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                                    <input type="email" placeholder="colleague@carehome.co.uk" className="form-input" style={{ height: '42px' }} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required />
-                                    <button type="submit" className="btn btn-primary" disabled={inviting || isDemo} style={{ height: '42px', padding: '0 1.5rem', whiteSpace: 'nowrap' }}>
-                                        {inviting ? <Loader2 size={16} className="spin" /> : <><Plus size={16} /> Invite</>}
+                    <div>
+                        {activeTab === 'profile' && (
+                            <div className="card">
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Profile Information</h2>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '400px' }}>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Full Name</label>
+                                        <input type="text" className="form-input" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Email Address</label>
+                                        <input type="email" className="form-input" value={formData.email} disabled style={{ background: 'var(--color-bg-page)' }} />
+                                        <p style={{ fontSize: '0.75rem', color: 'var(--color-text-tertiary)', marginTop: '0.375rem' }}>Contact support to change your email address</p>
+                                    </div>
+                                    <button onClick={handleSaveProfile} className="btn btn-primary" disabled={saving} style={{ width: 'fit-content' }}>
+                                        {saving ? <><Loader2 size={16} className="spin" /> Saving...</> : 'Save Changes'}
                                     </button>
-                                </form>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                    {loadingTeam ? (
-                                        <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--color-text-tertiary)' }}><Loader2 size={20} className="spin" style={{ margin: '0 auto 0.5rem' }} />Loading team...</div>
-                                    ) : teamMembers.length > 0 ? (
-                                        teamMembers.map((member) => (
-                                            <div key={member.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', background: 'var(--color-bg-page)', borderRadius: '8px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--color-accent-subtle)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.9rem' }}>
-                                                        {member.full_name?.charAt(0) || member.email?.charAt(0)}
-                                                    </div>
-                                                    <div>
-                                                        <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{member.full_name || 'Unnamed User'}</div>
-                                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>{member.email}</div>
-                                                    </div>
-                                                </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                                                    <span className={`badge ${member.role === 'owner' ? 'badge-success' : 'badge-secondary'}`}>{member.role || 'Member'}</span>
-                                                    {member.role !== 'owner' && (
-                                                        <button className="btn-icon" style={{ color: 'var(--color-text-tertiary)', padding: '4px' }} title="Remove User" onClick={() => alert('Remove user functionality coming soon')}>
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <div style={{ textAlign: 'center', padding: '2rem', background: 'var(--color-bg-page)', borderRadius: '8px', color: 'var(--color-text-secondary)' }}>
-                                            <User size={24} style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} /><p>No other team members yet.</p>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
-                        </div>
-                    )}
+                        )}
 
-                    {activeTab === 'billing' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        {activeTab === 'organization' && (
                             <div className="card">
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Organization Details</h2>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '400px' }}>
                                     <div>
-                                        <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.25rem' }}>{currentPlan.name} Plan</h2>
-                                        <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>{currentPlan.description}</p>
+                                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Company Name</label>
+                                        <input type="text" className="form-input" value={companyName || profile?.organization_name || 'My Organization'} disabled style={{ background: 'var(--color-bg-page)' }} />
                                     </div>
-                                    <button onClick={() => navigate('/pricing')} className="btn btn-primary"><Crown size={16} /> Upgrade</button>
-                                </div>
-                                <div style={{ padding: '1.25rem', background: 'var(--color-bg-page)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                     <div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
-                                            <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>{currentPlan.price}</span>
-                                            <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '0.2rem 0.5rem', background: '#ecfdf5', color: '#047857', borderRadius: '4px' }}>ACTIVE</span>
-                                        </div>
-                                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Next billing date: Feb 01, 2026</p>
-                                    </div>
-                                    <div style={{ textAlign: 'right' }}>
-                                        <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{currentPlan.price}</div>
-                                        <div style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>/{currentPlan.period}</div>
+                                        <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Your Role</label>
+                                        <input type="text" className="form-input" value={profile?.role || 'owner'} disabled style={{ background: 'var(--color-bg-page)', textTransform: 'capitalize' }} />
                                     </div>
                                 </div>
-                                <div style={{ marginTop: '1.25rem' }}>
-                                    <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem' }}>Plan Features:</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
-                                        {currentPlan.features.map((feature, i) => (
-                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
-                                                <Check size={14} color="#10b981" />
-                                                {feature}
-                                            </div>
-                                        ))}
+                                <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--color-border)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                                        <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Team Members ({teamMembers.length})</h3>
+                                        {isDemo && <span className="badge badge-warning">Demo Mode</span>}
                                     </div>
-                                </div>
-                            </div>
-                            <div className="card">
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem' }}>Billing History</h3>
-                                <div style={{ borderRadius: '8px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-                                        <thead>
-                                            <tr style={{ background: 'var(--color-bg-page)' }}>
-                                                <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Date</th>
-                                                <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Description</th>
-                                                <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600 }}>Amount</th>
-                                                <th style={{ padding: '0.75rem', textAlign: 'center', fontWeight: 600 }}>Status</th>
-                                                <th style={{ padding: '0.75rem', textAlign: 'center', fontWeight: 600 }}></th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {billingHistory.map((item, i) => (
-                                                <tr key={i} style={{ borderTop: '1px solid var(--color-border)' }}>
-                                                    <td style={{ padding: '0.75rem' }}>{item.date}</td>
-                                                    <td style={{ padding: '0.75rem' }}>{item.description}</td>
-                                                    <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600 }}>{item.amount}</td>
-                                                    <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                                                        <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#ecfdf5', color: '#047857', borderRadius: '4px' }}>{item.status}</span>
-                                                    </td>
-                                                    <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                                                        <button style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)' }}><Download size={16} /></button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {activeTab === 'notifications' && (
-                        <div className="card">
-                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Notification Preferences</h2>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                {[
-                                    { id: 'alerts', label: 'Compliance Alerts', desc: 'Get notified when critical compliance issues are detected', default: true },
-                                    { id: 'visa', label: 'Visa Expiry Reminders', desc: 'Receive reminders before sponsored worker visas expire', default: true },
-                                    { id: 'weekly', label: 'Weekly Digest', desc: 'Weekly summary of your compliance status', default: true },
-                                    { id: 'news', label: 'Regulatory Updates', desc: 'News about CQC changes and regulatory updates', default: false },
-                                    { id: 'marketing', label: 'Product Updates', desc: 'Learn about new features and improvements', default: false }
-                                ].map(item => (
-                                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: 'var(--color-bg-page)', borderRadius: '8px' }}>
-                                        <div>
-                                            <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.25rem' }}>{item.label}</div>
-                                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{item.desc}</div>
-                                        </div>
-                                        <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
-                                            <input type="checkbox" defaultChecked={item.default} style={{ opacity: 0, width: 0, height: 0 }} />
-                                            <span style={{ position: 'absolute', cursor: 'pointer', inset: 0, background: item.default ? '#10b981' : '#cbd5e1', borderRadius: '24px', transition: 'all 0.3s' }}>
-                                                <span style={{ position: 'absolute', height: '18px', width: '18px', left: item.default ? '22px' : '3px', bottom: '3px', background: 'white', borderRadius: '50%', transition: 'all 0.3s' }} />
-                                            </span>
-                                        </label>
-                                    </div>
-                                ))}
-                            </div>
-                            <button className="btn btn-primary" style={{ marginTop: '1.5rem' }}>Save Preferences</button>
-                        </div>
-                    )}
-
-                    {activeTab === 'security' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                            <div className="card">
-                                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Change Password</h2>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '400px' }}>
-                                    <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Current Password</label><input type="password" className="form-input" placeholder="••••••••" /></div>
-                                    <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>New Password</label><input type="password" className="form-input" placeholder="••••••••" /></div>
-                                    <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Confirm New Password</label><input type="password" className="form-input" placeholder="••••••••" /></div>
-                                    <button className="btn btn-primary" style={{ width: 'fit-content' }}>Update Password</button>
-                                </div>
-                            </div>
-                            <div className="card" style={{ borderColor: '#fecaca' }}>
-                                <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem', color: '#dc2626' }}>Danger Zone</h3>
-                                <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>Permanently delete your account and all associated data. This action cannot be undone.</p>
-                                <button className="btn" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Delete Account</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ENTERPRISE FEATURES */}
-                    {activeTab === 'enterprise' && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-
-                            {/* API ACCESS */}
-                            <div className="card" style={{ border: '1px solid #bfdbfe', background: 'linear-gradient(to right, #eff6ff, white)' }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
-                                    <div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                                            <Key size={20} color="#3b82f6" />
-                                            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1e40af' }}>Developer API Access</h2>
-                                        </div>
-                                        <p style={{ fontSize: '0.9rem', color: '#1e3a8a' }}>
-                                            Programmatic access to your compliance data.
-                                        </p>
-                                    </div>
-                                    <span className="badge badge-primary">ENTERPRISE</span>
-                                </div>
-
-                                {apiKey ? (
-                                    <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: '#64748b' }}>ACTIVE API KEY</div>
-                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                            <code style={{ flex: 1, padding: '0.75rem', background: '#f8fafc', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', color: '#334155' }}>
-                                                {apiKey}
-                                            </code>
-                                            <button className="btn btn-secondary" onClick={() => { navigator.clipboard.writeText(apiKey); alert('Copied!'); }}>
-                                                <Copy size={16} />
-                                            </button>
-                                            <button className="btn btn-secondary" style={{ color: '#dc2626', borderColor: '#fecaca' }} onClick={handleRevokeKey}>
-                                                Revoke
-                                            </button>
-                                        </div>
-                                        <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.75rem' }}>
-                                            Keep this key secret. It grants full access to your organization's data.
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div style={{ textAlign: 'center', padding: '2rem', background: 'white', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
-                                        <p style={{ marginBottom: '1rem', color: '#64748b' }}>No active API keys found.</p>
-                                        <button className="btn btn-primary" onClick={handleGenerateKey}>
-                                            Generate New API Key
+                                    <form onSubmit={handleInvite} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.5rem', marginBottom: '2rem' }}>
+                                        <input type="email" placeholder="colleague@carehome.co.uk" className="form-input" style={{ height: '42px' }} value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} required />
+                                        <select
+                                            className="form-input"
+                                            style={{ height: '42px', width: '120px' }}
+                                            value={inviteRole}
+                                            onChange={e => setInviteRole(e.target.value as any)}
+                                        >
+                                            <option value="member">Member</option>
+                                            <option value="admin">Admin</option>
+                                        </select>
+                                        <button type="submit" className="btn btn-primary" disabled={inviting} style={{ height: '42px', padding: '0 1.25rem', whiteSpace: 'nowrap' }}>
+                                            {inviting ? <Loader2 size={16} className="spin" /> : <><Plus size={16} /> Invite</>}
                                         </button>
-                                    </div>
-                                )}
-                            </div>
+                                    </form>
 
-                            {/* SSO CONFIG */}
-                            <div className="card">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                                    <Shield size={20} color="var(--color-primary)" />
-                                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Single Sign-On (SSO)</h2>
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '500px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                        <span style={{ fontWeight: 500 }}>SAML 2.0 / OIDC</span>
-                                        <label className="switch">
-                                            <input type="checkbox" checked={ssoConfig.enabled} onChange={(e) => setSsoConfig({ ...ssoConfig, enabled: e.target.checked })} />
-                                            <span className="slider round"></span>
-                                        </label>
-                                    </div>
-
-                                    {ssoConfig.enabled && (
-                                        <div className="animate-enter" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                            <div>
-                                                <label className="form-label">Identity Provider Entity ID</label>
-                                                <input type="text" className="form-input" placeholder="https://sts.windows.net/..." value={ssoConfig.entityId} onChange={e => setSsoConfig({ ...ssoConfig, entityId: e.target.value })} />
+                                    {pendingInvites.length > 0 && (
+                                        <div style={{ marginBottom: '2rem' }}>
+                                            <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                                                Pending Invitations
+                                            </h4>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                {pendingInvites.map(invite => (
+                                                    <div key={invite.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                            <Mail size={16} className="text-warning" />
+                                                            <div>
+                                                                <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{invite.email}</div>
+                                                                <div style={{ fontSize: '0.75rem', color: '#92400e' }}>Role: <span style={{ textTransform: 'capitalize' }}>{invite.role}</span> • Invited {new Date(invite.created_at).toLocaleDateString()}</div>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleRevokeInvite(invite.id)}
+                                                            style={{ background: 'transparent', border: 'none', color: '#b45309', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', padding: '0.25rem 0.5rem' }}
+                                                        >
+                                                            Revoke
+                                                        </button>
+                                                    </div>
+                                                ))}
                                             </div>
-                                            <div>
-                                                <label className="form-label">SSO URL (Assertion Consumer Service)</label>
-                                                <div style={{ position: 'relative' }}>
-                                                    <input type="text" className="form-input" value={`https://complyflow.uk/sso/acs/${profile?.organization_id}`} disabled style={{ background: '#f1f5f9', paddingRight: '40px' }} />
-                                                    <Copy size={14} style={{ position: 'absolute', right: '12px', top: '12px', cursor: 'pointer', opacity: 0.5 }} />
+                                        </div>
+                                    )}
+
+                                    <div>
+                                        <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', marginBottom: '0.75rem', letterSpacing: '0.05em' }}>
+                                            Active Team
+                                        </h4>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                            {loadingTeam ? (
+                                                <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--color-text-tertiary)' }}><Loader2 size={20} className="spin" style={{ margin: '0 auto 0.5rem' }} />Loading team...</div>
+                                            ) : teamMembers.length > 0 ? (
+                                                teamMembers.map((member) => (
+                                                    <div key={member.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', background: 'var(--color-bg-page)', borderRadius: '8px' }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--color-accent-subtle)', color: 'var(--color-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.9rem' }}>
+                                                                {member.full_name?.charAt(0) || member.email?.charAt(0)}
+                                                            </div>
+                                                            <div>
+                                                                <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{member.full_name || 'Unnamed User'}</div>
+                                                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>{member.email}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                                            <span className={`badge ${member.role === 'owner' ? 'badge-success' : 'badge-secondary'}`}>{member.role || 'Member'}</span>
+                                                            {member.role !== 'owner' && (
+                                                                <button className="btn-icon" style={{ color: 'var(--color-text-tertiary)', padding: '4px' }} title="Remove User" onClick={() => alert('Remove user functionality coming soon')}>
+                                                                    <Trash2 size={16} />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            ) : (
+                                                <div style={{ textAlign: 'center', padding: '2rem', background: 'var(--color-bg-page)', borderRadius: '8px', color: 'var(--color-text-secondary)' }}>
+                                                    <User size={24} style={{ margin: '0 auto 0.5rem', opacity: 0.5 }} /><p>No other team members yet.</p>
                                                 </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'billing' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                <div className="card">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                                        <div>
+                                            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.25rem' }}>{currentPlan.name} Plan</h2>
+                                            <p style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>{currentPlan.description}</p>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                            <button onClick={handleManageBilling} className="btn btn-secondary" disabled={loadingPortal || isDemo}>
+                                                {loadingPortal ? <Loader2 size={16} className="spin" /> : 'Manage Billing'}
+                                            </button>
+                                            <button onClick={() => navigate('/pricing')} className="btn btn-primary"><Crown size={16} /> Change Plan</button>
+                                        </div>
+                                    </div>
+                                    <div style={{ padding: '1.25rem', background: 'var(--color-bg-page)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
+                                                <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>{currentPlan.price}</span>
+                                                <span style={{ fontSize: '0.7rem', fontWeight: 600, padding: '0.2rem 0.5rem', background: '#ecfdf5', color: '#047857', borderRadius: '4px' }}>ACTIVE</span>
                                             </div>
+                                            <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>Next billing date: Feb 01, 2026</p>
+                                        </div>
+                                        <div style={{ textAlign: 'right' }}>
+                                            <div style={{ fontSize: '1.5rem', fontWeight: 800 }}>{currentPlan.price}</div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>/{currentPlan.period}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ marginTop: '1.25rem' }}>
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem' }}>Plan Features:</div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem' }}>
+                                            {currentPlan.features.map((feature, i) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                                                    <Check size={14} color="#10b981" />
+                                                    {feature}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="card">
+                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '1rem' }}>Billing History</h3>
+                                    <div style={{ borderRadius: '8px', border: '1px solid var(--color-border)', overflow: 'hidden' }}>
+                                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                                            <thead>
+                                                <tr style={{ background: 'var(--color-bg-page)' }}>
+                                                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Date</th>
+                                                    <th style={{ padding: '0.75rem', textAlign: 'left', fontWeight: 600 }}>Description</th>
+                                                    <th style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600 }}>Amount</th>
+                                                    <th style={{ padding: '0.75rem', textAlign: 'center', fontWeight: 600 }}>Status</th>
+                                                    <th style={{ padding: '0.75rem', textAlign: 'center', fontWeight: 600 }}></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {billingHistory.map((item, i) => (
+                                                    <tr key={i} style={{ borderTop: '1px solid var(--color-border)' }}>
+                                                        <td style={{ padding: '0.75rem' }}>{item.date}</td>
+                                                        <td style={{ padding: '0.75rem' }}>{item.description}</td>
+                                                        <td style={{ padding: '0.75rem', textAlign: 'right', fontWeight: 600 }}>{item.amount}</td>
+                                                        <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                                            <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: '#ecfdf5', color: '#047857', borderRadius: '4px' }}>{item.status}</span>
+                                                        </td>
+                                                        <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                                                            <button
+                                                                onClick={() => item.pdfUrl && window.open(item.pdfUrl, '_blank')}
+                                                                disabled={!item.pdfUrl}
+                                                                style={{
+                                                                    background: 'transparent',
+                                                                    border: 'none',
+                                                                    cursor: item.pdfUrl ? 'pointer' : 'not-allowed',
+                                                                    color: item.pdfUrl ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
+                                                                    opacity: item.pdfUrl ? 1 : 0.5
+                                                                }}
+                                                                title={item.pdfUrl ? 'Download Invoice' : 'Invoice not available'}
+                                                            >
+                                                                <Download size={16} />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'notifications' && (
+                            <div className="card">
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Notification Preferences</h2>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    {[
+                                        { id: 'alerts', label: 'Compliance Alerts', desc: 'Get notified when critical compliance issues are detected', default: true },
+                                        { id: 'visa', label: 'Visa Expiry Reminders', desc: 'Receive reminders before sponsored worker visas expire', default: true },
+                                        { id: 'weekly', label: 'Weekly Digest', desc: 'Weekly summary of your compliance status', default: true },
+                                        { id: 'news', label: 'Regulatory Updates', desc: 'News about CQC changes and regulatory updates', default: false },
+                                        { id: 'marketing', label: 'Product Updates', desc: 'Learn about new features and improvements', default: false }
+                                    ].map(item => (
+                                        <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: 'var(--color-bg-page)', borderRadius: '8px' }}>
                                             <div>
-                                                <label className="form-label">X.509 Certificate</label>
-                                                <textarea className="form-input" rows={4} placeholder="-----BEGIN CERTIFICATE-----..." value={ssoConfig.cert} onChange={e => setSsoConfig({ ...ssoConfig, cert: e.target.value })} />
+                                                <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.25rem' }}>{item.label}</div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)' }}>{item.desc}</div>
                                             </div>
-                                            <button className="btn btn-primary" onClick={handleSaveSSO} disabled={saving}>
-                                                {saving ? 'Verifying...' : 'Save Configuration'}
+                                            <label style={{ position: 'relative', display: 'inline-block', width: '44px', height: '24px' }}>
+                                                <input type="checkbox" defaultChecked={item.default} style={{ opacity: 0, width: 0, height: 0 }} />
+                                                <span style={{ position: 'absolute', cursor: 'pointer', inset: 0, background: item.default ? '#10b981' : '#cbd5e1', borderRadius: '24px', transition: 'all 0.3s' }}>
+                                                    <span style={{ position: 'absolute', height: '18px', width: '18px', left: item.default ? '22px' : '3px', bottom: '3px', background: 'white', borderRadius: '50%', transition: 'all 0.3s' }} />
+                                                </span>
+                                            </label>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button className="btn btn-primary" style={{ marginTop: '1.5rem' }}>Save Preferences</button>
+                            </div>
+                        )}
+
+                        {activeTab === 'security' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                <div className="card">
+                                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '1.5rem' }}>Change Password</h2>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '400px' }}>
+                                        <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Current Password</label><input type="password" className="form-input" placeholder="••••••••" /></div>
+                                        <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>New Password</label><input type="password" className="form-input" placeholder="••••••••" /></div>
+                                        <div><label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '0.5rem' }}>Confirm New Password</label><input type="password" className="form-input" placeholder="••••••••" /></div>
+                                        <button className="btn btn-primary" style={{ width: 'fit-content' }}>Update Password</button>
+                                    </div>
+                                </div>
+                                {/* GDPR Data Export */}
+                                <div className="card" style={{ borderColor: '#bfdbfe', background: 'linear-gradient(to right, #eff6ff, white)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                                        <Download size={20} color="#3b82f6" />
+                                        <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e40af' }}>Your Data</h3>
+                                    </div>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>
+                                        Download all your personal data stored in ComplyFlow. This includes your profile, organization details, compliance activities, and training records.
+                                    </p>
+                                    <button
+                                        className="btn btn-secondary"
+                                        style={{ width: 'fit-content' }}
+                                        onClick={handleExportData}
+                                        disabled={exportingData}
+                                    >
+                                        {exportingData ? (
+                                            <><Loader2 size={16} className="spin" /> Exporting...</>
+                                        ) : (
+                                            <><Download size={16} /> Download My Data</>
+                                        )}
+                                    </button>
+                                </div>
+                                <div className="card" style={{ borderColor: '#fecaca' }}>
+                                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '0.5rem', color: '#dc2626' }}>Danger Zone</h3>
+                                    <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: '1rem' }}>Permanently delete your account and all associated data. This action cannot be undone.</p>
+                                    <button className="btn" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Delete Account</button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ENTERPRISE FEATURES */}
+                        {activeTab === 'enterprise' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+
+                                {/* API ACCESS */}
+                                <div className="card" style={{ border: '1px solid #bfdbfe', background: 'linear-gradient(to right, #eff6ff, white)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                                                <Key size={20} color="#3b82f6" />
+                                                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1e40af' }}>Developer API Access</h2>
+                                            </div>
+                                            <p style={{ fontSize: '0.9rem', color: '#1e3a8a' }}>
+                                                Programmatic access to your compliance data.
+                                            </p>
+                                        </div>
+                                        <span className="badge badge-primary">ENTERPRISE</span>
+                                    </div>
+
+                                    {apiKey ? (
+                                        <div style={{ background: 'white', padding: '1.5rem', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem', color: '#64748b' }}>ACTIVE API KEY</div>
+                                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                <code style={{ flex: 1, padding: '0.75rem', background: '#f8fafc', borderRadius: '4px', border: '1px solid #cbd5e1', fontFamily: 'monospace', color: '#334155' }}>
+                                                    {apiKey}
+                                                </code>
+                                                <button className="btn btn-secondary" onClick={() => { navigator.clipboard.writeText(apiKey); alert('Copied!'); }}>
+                                                    <Copy size={16} />
+                                                </button>
+                                                <button className="btn btn-secondary" style={{ color: '#dc2626', borderColor: '#fecaca' }} onClick={handleRevokeKey}>
+                                                    Revoke
+                                                </button>
+                                            </div>
+                                            <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '0.75rem' }}>
+                                                Keep this key secret. It grants full access to your organization's data.
+                                            </p>
+                                        </div>
+                                    ) : (
+                                        <div style={{ textAlign: 'center', padding: '2rem', background: 'white', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                                            <p style={{ marginBottom: '1rem', color: '#64748b' }}>No active API keys found.</p>
+                                            <button className="btn btn-primary" onClick={handleGenerateKey}>
+                                                Generate New API Key
                                             </button>
                                         </div>
                                     )}
                                 </div>
-                            </div>
 
-                            {/* CUSTOM AI MODELS */}
-                            <div className="card">
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                                    <Database size={20} color="var(--color-accent)" />
-                                    <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Custom AI Knowledge Base</h2>
-                                </div>
-                                <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
-                                    Upload your specific standard operating procedures (SOPs). Our AI will fine-tune to your organization's internal rules.
-                                </p>
-
-                                <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '2rem', textAlign: 'center', marginBottom: '1.5rem', cursor: 'pointer' }} onClick={() => document.getElementById('kb-upload')?.click()}>
-                                    <div style={{ width: '48px', height: '48px', background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto' }}>
-                                        <FileText size={24} color="#64748b" />
+                                {/* SSO CONFIG */}
+                                <div className="card">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                                        <Shield size={20} color="var(--color-primary)" />
+                                        <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Single Sign-On (SSO)</h2>
                                     </div>
-                                    <div style={{ fontWeight: 600, color: '#334155' }}>
-                                        {uploadingKB ? 'Uploading...' : 'Click to Upload SOPs'}
-                                    </div>
-                                    <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>PDF, DOCX (Max 20MB)</div>
-                                    <input type="file" id="kb-upload" style={{ display: 'none' }} onChange={handleUploadKB} disabled={uploadingKB} />
-                                </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '500px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                            <span style={{ fontWeight: 500 }}>SAML 2.0 / OIDC</span>
+                                            <label className="switch">
+                                                <input type="checkbox" checked={ssoConfig.enabled} onChange={(e) => setSsoConfig({ ...ssoConfig, enabled: e.target.checked })} />
+                                                <span className="slider round"></span>
+                                            </label>
+                                        </div>
 
-                                {knowledgeBaseFiles.length > 0 && (
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        {knowledgeBaseFiles.map((file, i) => (
-                                            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                                    <FileText size={16} color="#64748b" />
-                                                    <div>
-                                                        <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{file.name}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{file.size} • {file.uploaded}</div>
+                                        {ssoConfig.enabled && (
+                                            <div className="animate-enter" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                                <div>
+                                                    <label className="form-label">Identity Provider Entity ID</label>
+                                                    <input type="text" className="form-input" placeholder="https://sts.windows.net/..." value={ssoConfig.entityId} onChange={e => setSsoConfig({ ...ssoConfig, entityId: e.target.value })} />
+                                                </div>
+                                                <div>
+                                                    <label className="form-label">SSO URL (Assertion Consumer Service)</label>
+                                                    <div style={{ position: 'relative' }}>
+                                                        <input type="text" className="form-input" value={`https://complyflow.uk/sso/acs/${profile?.organization_id}`} disabled style={{ background: '#f1f5f9', paddingRight: '40px' }} />
+                                                        <Copy size={14} style={{ position: 'absolute', right: '12px', top: '12px', cursor: 'pointer', opacity: 0.5 }} />
                                                     </div>
                                                 </div>
-                                                <span className={`badge ${file.status === 'Active' ? 'badge-success' : 'badge-warning'}`}>
-                                                    {file.status === 'Indexing...' && <RefreshCw size={12} className="animate-spin mr-1" />}
-                                                    {file.status}
-                                                </span>
+                                                <div>
+                                                    <label className="form-label">X.509 Certificate</label>
+                                                    <textarea className="form-input" rows={4} placeholder="-----BEGIN CERTIFICATE-----..." value={ssoConfig.cert} onChange={e => setSsoConfig({ ...ssoConfig, cert: e.target.value })} />
+                                                </div>
+                                                <button className="btn btn-primary" onClick={handleSaveSSO} disabled={saving}>
+                                                    {saving ? 'Verifying...' : 'Save Configuration'}
+                                                </button>
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
-                                )}
-                            </div>
+                                </div>
 
-                        </div>
-                    )}
+                                {/* CUSTOM AI MODELS */}
+                                <div className="card">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                                        <Database size={20} color="var(--color-accent)" />
+                                        <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Custom AI Knowledge Base</h2>
+                                    </div>
+                                    <p style={{ color: 'var(--color-text-secondary)', marginBottom: '1.5rem' }}>
+                                        Upload your specific standard operating procedures (SOPs). Our AI will fine-tune to your organization's internal rules.
+                                    </p>
+
+                                    <div style={{ border: '2px dashed #cbd5e1', borderRadius: '8px', padding: '2rem', textAlign: 'center', marginBottom: '1.5rem', cursor: 'pointer' }} onClick={() => document.getElementById('kb-upload')?.click()}>
+                                        <div style={{ width: '48px', height: '48px', background: '#f1f5f9', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto' }}>
+                                            <FileText size={24} color="#64748b" />
+                                        </div>
+                                        <div style={{ fontWeight: 600, color: '#334155' }}>
+                                            {uploadingKB ? 'Uploading...' : 'Click to Upload SOPs'}
+                                        </div>
+                                        <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>PDF, DOCX (Max 20MB)</div>
+                                        <input type="file" id="kb-upload" style={{ display: 'none' }} onChange={handleUploadKB} disabled={uploadingKB} />
+                                    </div>
+
+                                    {knowledgeBaseFiles.length > 0 && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                            {knowledgeBaseFiles.map((file, i) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                                        <FileText size={16} color="#64748b" />
+                                                        <div>
+                                                            <div style={{ fontSize: '0.9rem', fontWeight: 500 }}>{file.name}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{file.size} • {file.uploaded}</div>
+                                                        </div>
+                                                    </div>
+                                                    <span className={`badge ${file.status === 'Active' ? 'badge-success' : 'badge-warning'}`}>
+                                                        {file.status === 'Indexing...' && <RefreshCw size={12} className="animate-spin mr-1" />}
+                                                        {file.status}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
+
             <style>{`
                 .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
                 .switch input { opacity: 0; width: 0; height: 0; }
@@ -634,6 +909,6 @@ export const Settings = () => {
                 input:checked + .slider { background-color: var(--color-primary); }
                 input:checked + .slider:before { transform: translateX(20px); }
             `}</style>
-        </div>
+        </>
     );
 };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, Shield, Users, FileCheck, AlertTriangle, ArrowRight, Sparkles, Clock, Target, Award } from 'lucide-react';
+import { TrendingUp, TrendingDown, Shield, Users, FileCheck, AlertTriangle, ArrowRight, Sparkles, Clock, Target, Award, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -79,7 +79,8 @@ export const ExecutiveSummary: React.FC = () => {
         activeAlerts: 0,
         policiesReviewed: 0,
         trainedStaff: 0,
-        daysToNextAudit: '--'
+        daysToNextAudit: '--',
+        gapAnalysisCredits: 0
     });
     const [loading, setLoading] = useState(!isDemo);
 
@@ -91,7 +92,8 @@ export const ExecutiveSummary: React.FC = () => {
                 activeAlerts: 3,
                 policiesReviewed: 12,
                 trainedStaff: 85,
-                daysToNextAudit: '45'
+                daysToNextAudit: '45',
+                gapAnalysisCredits: 3
             });
             return;
         }
@@ -116,12 +118,20 @@ export const ExecutiveSummary: React.FC = () => {
                     .eq('organization_id', profile.organization_id)
                     .eq('is_resolved', false);
 
+                // Fetch credits
+                const { data: creditData } = await supabase
+                    .from('organization_credits')
+                    .select('gap_analysis_credits')
+                    .eq('organization_id', profile.organization_id)
+                    .maybeSingle();
+
                 setMetrics({
                     complianceScore: scoreData?.overall_score || 0,
                     activeAlerts: alertCount || 0,
                     policiesReviewed: 12, // Placeholder
                     trainedStaff: 85, // Placeholder
-                    daysToNextAudit: '45' // Placeholder
+                    daysToNextAudit: '45', // Placeholder
+                    gapAnalysisCredits: creditData?.gap_analysis_credits || 0
                 });
             } catch (err) {
                 console.error('Failed to fetch executive metrics:', err);
@@ -223,6 +233,15 @@ export const ExecutiveSummary: React.FC = () => {
                     icon={<Clock size={20} />}
                     color="#f59e0b"
                 />
+                {(profile?.subscription_tier === 'free' || metrics.gapAnalysisCredits > 0) && (
+                    <MetricCard
+                        title="Analysis Credits"
+                        value={metrics.gapAnalysisCredits}
+                        icon={<Zap size={20} />}
+                        color="#8b5cf6"
+                        onClick={() => navigate('/pricing')}
+                    />
+                )}
             </div>
 
             {/* Quick Action Banner */}

@@ -73,3 +73,22 @@ export const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
         cta: 'Contact Sales'
     }
 ];
+
+export const STANDALONE_OFFERS = [
+    {
+        id: 'offer_gap_analysis',
+        name: 'Single Gap Analysis',
+        price: '£29',
+        description: 'Perfect for a one-off policy audit without a subscription.',
+        features: ['Full AI Reasoning', 'PDF Report', 'Action Plan', '7-Day Access'],
+        cta: 'Purchase Now'
+    },
+    {
+        id: 'offer_sponsor_audit',
+        name: 'Sponsor License Audit',
+        price: '£149',
+        description: 'Comprehensive audit of your HR files for Home Office compliance.',
+        features: ['Right-to-Work Verification', 'CoS Management Check', 'Compliance Guarantee', 'Evidence Pack'],
+        cta: 'Book Audit'
+    }
+];

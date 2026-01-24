@@ -1,12 +1,23 @@
 import { initializeAI, runWithRetry, delay, shouldUseEdgeFunction, callEdgeFunctionAI } from './aiCore';
 import type { ChatMessage } from './aiCore';
 import { CQC_KNOWLEDGE_BASE } from '../data/cqcKnowledgeBase';
+import { searchOrgDocuments, buildRAGContext } from './ragService';
 
 export const runAdvisorChat = async (
     history: ChatMessage[],
     currentInput: string,
-    apiKey?: string
+    apiKey?: string,
+    organizationId?: string
 ): Promise<string> => {
+    // 0. Fetch RAG Context if organizationId is provided
+    let ragContext = '';
+    if (organizationId) {
+        const chunks = await searchOrgDocuments(currentInput, organizationId);
+        if (chunks.length > 0) {
+            ragContext = buildRAGContext(chunks).formattedContext;
+        }
+    }
+
     // 1. Edge Function Path
     if (shouldUseEdgeFunction()) {
         const response = await callEdgeFunctionAI('cqc-ai-proxy', {
@@ -15,6 +26,7 @@ export const runAdvisorChat = async (
             modelName: 'gemini-2.0-flash', // Default for Edge
             systemInstruction: `You are an expert CQC Consultant and Advisor. 
             CONTEXT: ${CQC_KNOWLEDGE_BASE}
+            ${ragContext}
             GUIDELINES: Format with Markdown. Be concise but detailed.`
         });
         return response.text;
@@ -36,12 +48,15 @@ export const runAdvisorChat = async (
 CONTEXT - OFFICIAL CQC REGULATIONS:
 ${CQC_KNOWLEDGE_BASE}
 
+${ragContext}
+
 GUIDELINES:
 1. You are helpful, knowledgeable, and professional.
 2. Cite specific CQC regulations (e.g., Reg 12: Safe Care and Treatment) when relevant, using the context provided above.
-3. Provide practical, actionable advice.
-4. Format your responses using Markdown: use bold for key terms, lists for steps, and headers where appropriate.
-5. If you don't know the answer, say so, but offer to help find out.` }]
+3. If organization-specific documents are provided in the context, refer to them to provide personalized advice.
+4. Provide practical, actionable advice.
+5. Format your responses using Markdown: use bold for key terms, lists for steps, and headers where appropriate.
+6. If you don't know the answer, say so, but offer to help find out.` }]
                 },
                 {
                     role: "model",
@@ -86,8 +101,18 @@ export const runAdvisorChatStream = async (
     history: ChatMessage[],
     currentInput: string,
     onChunk: (text: string) => void,
-    apiKey?: string
+    apiKey?: string,
+    organizationId?: string
 ): Promise<string> => {
+    // 0. Fetch RAG Context if organizationId is provided
+    let ragContext = '';
+    if (organizationId) {
+        const chunks = await searchOrgDocuments(currentInput, organizationId);
+        if (chunks.length > 0) {
+            ragContext = buildRAGContext(chunks).formattedContext;
+        }
+    }
+
     const genAI = initializeAI(apiKey);
     if (!genAI) throw new Error("AI not initialized");
     let fullText = "";
@@ -104,12 +129,15 @@ export const runAdvisorChatStream = async (
 CONTEXT - OFFICIAL CQC REGULATIONS:
 ${CQC_KNOWLEDGE_BASE}
 
+${ragContext}
+
 GUIDELINES:
 1. You are helpful, knowledgeable, and professional.
 2. Cite specific CQC regulations (e.g., Reg 12) from the context provided.
-3. Provide practical, actionable advice.
-4. Format your responses using Markdown.
-5. Keep your advice focused on the UK Care Quality Commission standards.` }]
+3. If organization-specific documents are provided, prioritize using them for context.
+4. Provide practical, actionable advice.
+5. Format your responses using Markdown.
+6. Keep your advice focused on the UK Care Quality Commission standards.` }]
                 },
                 {
                     role: "model",

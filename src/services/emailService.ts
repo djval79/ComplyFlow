@@ -11,7 +11,8 @@ export type EmailType =
     | 'weekly_digest'
     | 'trial_expiring'
     | 'password_reset'
-    | 'team_invite';
+    | 'team_invite'
+    | 'visa_expiry_alert';
 
 interface SendEmailOptions {
     type: EmailType;
@@ -144,6 +145,25 @@ export async function sendTeamInviteEmail(
         type: 'team_invite',
         to: email,
         data: { inviterName, organizationName, role, inviteUrl }
+    });
+    return result.success;
+}
+
+/**
+ * Send visa expiry alert email
+ */
+export async function sendVisaExpiryEmail(
+    email: string,
+    workerName: string,
+    visaType: string,
+    expiryDate: string,
+    daysRemaining: number,
+    dashboardUrl: string = 'https://complyflow.uk/sponsor-guardian'
+): Promise<boolean> {
+    const result = await sendEmail({
+        type: 'visa_expiry_alert',
+        to: email,
+        data: { workerName, visaType, expiryDate, daysRemaining, dashboardUrl }
     });
     return result.success;
 }

@@ -65,7 +65,7 @@ export const homeOffice2025Rules = [
     },
     {
         category: "Compensation",
-        rule: "April 2025 Salary Thresholds",
+        rule: "January 2026 Salary Thresholds",
         detail: "Care Worker (6135) minimum increases to £12.82/hr or £25,000/yr (whichever is higher).",
         risk_level: "High"
     }

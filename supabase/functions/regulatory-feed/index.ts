@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { DOMParser } from "https://deno.land/x/deno_dom@v0.1.38/deno-dom-wasm.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { GoogleGenerativeAI } from "https://esm.sh/@google/generative-ai@0.1.3";
 
 /**
  * Regulatory Feed Edge Function
@@ -66,6 +67,53 @@ function calculateRelevance(title: string, summary: string): number {
     }
 
     return Math.min(100, score)
+}
+
+/**
+ * AI Analysis using Gemini
+ */
+async function analyzeRegulatoryUpdate(title: string, summary: string): Promise<{
+    ai_summary?: string;
+    ai_action_items?: string[];
+    relevance_score?: number;
+}> {
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!apiKey) return {};
+
+    try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+        const prompt = `
+            As a UK CQC Compliance Expert, analyze this regulatory update for a care home/social care provider.
+            Title: ${title}
+            Original Summary: ${summary}
+
+            Return exactly a JSON object (no other text) with:
+            1. "ai_summary": A 1-2 sentence high-level impact summary for a CEO/Manager.
+            2. "ai_action_items": An array of 2-4 practical, actionable steps to ensure compliance.
+            3. "relevance_score": A revised score (0-100) specifically for a care home provider.
+
+            Example format:
+            {
+              "ai_summary": "This update introduces mandatory digital RTW checks starting Jan 2026. Failure to use the specific portal may result in fines.",
+              "ai_action_items": ["Review current RTW audit process", "Update staff training on digital share codes", "Verify IDSP certifications"],
+              "relevance_score": 95
+            }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+    } catch (e) {
+        console.error("Gemini Analysis Error:", e);
+    }
+    return {};
 }
 
 async function fetchCQCUpdates(): Promise<RegulatoryUpdate[]> {
@@ -170,6 +218,12 @@ serve(async (req: Request) => {
 
         // Upsert to database (avoid duplicates by URL)
         for (const update of relevantUpdates) {
+            // If relevance is high, perform AI analysis
+            let aiAnalysis = {};
+            if (update.relevance_score >= 80) {
+                aiAnalysis = await analyzeRegulatoryUpdate(update.title, update.summary);
+            }
+
             const { error } = await supabase
                 .from('regulatory_updates')
                 .upsert({
@@ -179,7 +233,9 @@ serve(async (req: Request) => {
                     url: update.url,
                     published_date: update.published_date,
                     category: update.category,
-                    relevance_score: update.relevance_score,
+                    relevance_score: aiAnalysis.relevance_score || update.relevance_score,
+                    ai_summary: aiAnalysis.ai_summary,
+                    ai_action_items: aiAnalysis.ai_action_items,
                     updated_at: new Date().toISOString()
                 }, {
                     onConflict: 'url',
@@ -187,7 +243,7 @@ serve(async (req: Request) => {
                 })
 
             if (error) {
-                console.error('Error upserting update:', error)
+                console.error('Error upserting update:', error);
             }
         }
 

@@ -1,21 +1,42 @@
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle, FileText, Calendar, ArrowRight, BookOpen, Shield, Plus, Loader2, Sparkles, TrendingUp, Bell, ExternalLink } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useCompliance } from '../context/ComplianceContext';
 import { supabase } from '../lib/supabase';
 import { complianceService } from '../services/complianceService';
 import { ExecutiveSummary } from '../components/ExecutiveSummary';
 import { OnboardingProgress, TrialBanner } from '../components/ConversionWidgets';
+import { WatchdogWidget } from '../components/WatchdogWidget';
+import { UsageWidget } from '../components/UsageWidget';
+import { ProductTour } from '../components/ProductTour';
+import { HelpTooltip } from '../components/Tooltip';
 import { DEMO_REGULATORY_UPDATES } from '../services/regulatoryIntelligence';
+import { toast } from 'react-hot-toast';
+import { Sparkles, AlertTriangle, TrendingUp, Shield, FileText, CheckCircle, Plus, ArrowRight, Bell, ExternalLink, Activity, Zap } from 'lucide-react';
+import { SkeletonMetric, SkeletonCard } from '../components/SkeletonCards';
 
 export const Dashboard = () => {
     const { profile, isDemo } = useAuth();
     const { companyName } = useCompliance();
     const navigate = useNavigate();
+    const location = useLocation();
     const [alerts, setAlerts] = useState<any[]>([]);
     const [latestScore, setLatestScore] = useState<number | null>(null);
     const [loadingAlerts, setLoadingAlerts] = useState(!isDemo);
+
+    useEffect(() => {
+        const query = new URLSearchParams(location.search);
+        if (query.get('payment') === 'success') {
+            const type = query.get('type');
+            if (type === 'subscription') {
+                toast.success('Subscription upgraded successfully! Welcome to your new plan.', { duration: 5000 });
+            } else {
+                toast.success('Purchase successful! Your credits have been added to your account.', { duration: 5000 });
+            }
+            // Clear URL params
+            navigate('/dashboard', { replace: true });
+        }
+    }, [location.search, navigate]);
 
     useEffect(() => {
         const orgId = profile?.organization_id;
@@ -54,22 +75,24 @@ export const Dashboard = () => {
     const displayName = profile?.organization_name || (isDemo ? companyName : 'Your Organization');
 
     return (
-        <div className="container animate-enter" style={{ padding: '2rem 1rem' }}>
+        <div className="container animate-enter" style={{ padding: '2rem 1rem', maxWidth: '1280px' }}>
+            {/* Product Tour for first-time users */}
+            <ProductTour />
 
-            {/* Welcome Header */}
-            <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            {/* Welcome Header - Pro Max */}
+            <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
                 <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)' }}>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
                             {new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
                         </span>
                     </div>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <h1 style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--color-text-main)', display: 'flex', alignItems: 'center', gap: '0.75rem', letterSpacing: '-0.025em' }}>
                         Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 18 ? 'afternoon' : 'evening'}, {profile?.full_name?.split(' ')[0] || 'there'}
-                        <Sparkles size={24} color="#fbbf24" style={{ animation: 'pulse 2s infinite' }} />
+                        <Sparkles size={26} className="animate-float" color="#fbbf24" />
                     </h1>
-                    <p style={{ color: 'var(--color-text-secondary)', marginTop: '0.25rem' }}>
-                        Compliance command center for <strong>{displayName}</strong>
+                    <p style={{ color: 'var(--color-text-secondary)', marginTop: '0.375rem', fontSize: '1rem' }}>
+                        Compliance command center for <strong style={{ color: 'var(--color-text-main)' }}>{displayName}</strong>
                     </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -110,36 +133,39 @@ export const Dashboard = () => {
             )}
 
             {/* Action Grid & Score */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+            <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
 
                 {/* Compliance Score Widget */}
-                <div className="card" style={{ background: 'var(--color-bg-surface)', borderLeft: '4px solid #4f46e5' }}>
-                    <h3 style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem' }}>
-                        Live Compliance Score
-                    </h3>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                        <div style={{
-                            width: '80px', height: '80px', borderRadius: '50%', border: '6px solid #e2e8f0',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative'
-                        }}>
-                            <svg width="80" height="80" style={{ position: 'absolute', transform: 'rotate(-90deg)' }}>
-                                <circle
-                                    cx="40" cy="40" r="34" fill="transparent" stroke="#4f46e5" strokeWidth="6"
-                                    strokeDasharray={`${(latestScore || 0) * 2.13} 213`} strokeLinecap="round"
-                                />
-                            </svg>
-                            <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-text-main)' }}>{latestScore || '--'}%</span>
-                        </div>
-                        <div>
-                            <div style={{ fontWeight: 600, color: (latestScore || 0) > 80 ? 'var(--color-success)' : 'var(--color-warning)' }}>
-                                {(latestScore || 0) > 80 ? 'Good Standing' : (latestScore === null ? 'No Data' : 'Review Required')}
+                {loadingAlerts ? <SkeletonCard /> : (
+                    <div className="card" style={{ background: 'var(--color-bg-surface)', borderLeft: '4px solid #4f46e5' }}>
+                        <h3 style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            Live Compliance Score
+                            <HelpTooltip content="This score is calculated from your latest AI Gap Analysis. Run a new analysis to update it." position="right" />
+                        </h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                            <div style={{
+                                width: '80px', height: '80px', borderRadius: '50%', border: '6px solid #e2e8f0',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative'
+                            }}>
+                                <svg width="80" height="80" style={{ position: 'absolute', transform: 'rotate(-90deg)' }}>
+                                    <circle
+                                        cx="40" cy="40" r="34" fill="transparent" stroke="#4f46e5" strokeWidth="6"
+                                        strokeDasharray={`${(latestScore || 0) * 2.13} 213`} strokeLinecap="round"
+                                    />
+                                </svg>
+                                <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-text-main)' }}>{latestScore || '--'}%</span>
                             </div>
-                            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)', marginTop: '0.25rem' }}>
-                                Based on your last <strong>{latestScore === null ? '0' : '1'}</strong> AI Gap Analysis.
-                            </p>
+                            <div>
+                                <div style={{ fontWeight: 600, color: (latestScore || 0) > 80 ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                                    {(latestScore || 0) > 80 ? 'Good Standing' : (latestScore === null ? 'No Data' : 'Review Required')}
+                                </div>
+                                <p style={{ fontSize: '0.8rem', color: 'var(--color-text-tertiary)', marginTop: '0.25rem' }}>
+                                    Based on your last <strong>{latestScore === null ? '0' : '1'}</strong> AI Gap Analysis.
+                                </p>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Action Card 1: Setup / Gap Analysis */}
                 <div className="card" style={{ borderTop: '4px solid var(--color-primary)' }}>
@@ -179,10 +205,16 @@ export const Dashboard = () => {
                         Manage Workforce
                     </button>
                 </div>
+
+                {/* Trend Watchdog Widget */}
+                <WatchdogWidget />
+
+                {/* Usage Widget */}
+                <UsageWidget />
             </div>
 
             {/* Quick Actions & Intel */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+            <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '2rem' }}>
 
                 {/* Quick Start List */}
                 <div className="card">
@@ -300,7 +332,7 @@ export const Dashboard = () => {
                         </div>
                         <div style={{ marginTop: '0.5rem', padding: '1rem', background: 'var(--color-bg-page)', borderRadius: 'var(--radius-sm)' }}>
                             <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' }}>Upcoming Audit</div>
-                            <div style={{ fontSize: '0.9rem', color: 'var(--color-text-main)', fontWeight: 600 }}>Home Office 2025 Readiness Check</div>
+                            <div style={{ fontSize: '0.9rem', color: 'var(--color-text-main)', fontWeight: 600 }}>Home Office 2026 Readiness Check</div>
                         </div>
                     </div>
                 </div>

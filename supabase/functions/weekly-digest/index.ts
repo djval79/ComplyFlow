@@ -12,7 +12,7 @@ const corsHeaders = {
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
     if (req.method === "OPTIONS") {
         return new Response("ok", { headers: corsHeaders })
     }
@@ -90,7 +90,7 @@ serve(async (req) => {
                 .limit(3)
 
             const regulatoryUpdates = updates && updates.length > 0
-                ? updates.map(u => `${u.source.toUpperCase()}: ${u.title}`).join('; ')
+                ? updates.map((u: { source: string; title: string }) => `${u.source.toUpperCase()}: ${u.title}`).join('; ')
                 : 'No new regulatory updates this week.'
 
             // Build action items based on stats
@@ -148,9 +148,10 @@ serve(async (req) => {
         )
 
     } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
         console.error('Weekly digest error:', error)
         return new Response(
-            JSON.stringify({ error: error.message }),
+            JSON.stringify({ error: errorMessage }),
             {
                 headers: { ...corsHeaders, "Content-Type": "application/json" },
                 status: 500

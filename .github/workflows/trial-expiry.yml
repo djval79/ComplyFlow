@@ -1,0 +1,36 @@
+name: Trial Expiry Cron
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  expire-trials:
+    runs-on: ubuntu-latest
+    # // turbo
+    steps:
+      - name: Trigger Trial Expiry Function
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          curl -X POST \
+            "${SUPABASE_URL}/functions/v1/trial-expiry" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            -H "Content-Type: application/json" \
+            --fail-with-body \
+            -o response.json
+          
+          echo "Response:"
+          cat response.json
+          
+          # Check if successful
+          if jq -e '.success == true' response.json > /dev/null; then
+            echo "✅ Trial expiry completed successfully"
+            jq '.expired_count' response.json
+          else
+            echo "❌ Trial expiry failed"
+            exit 1
+          fi
